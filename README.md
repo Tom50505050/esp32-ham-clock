@@ -148,6 +148,49 @@ Dostępne endpointy:
 | `GET /api/system` | Informacje systemowe |
 | `GET /instruction` | Instrukcja obsługi |
 
+## 🎨 Zmiana grafiki strony startowej
+
+Ekran startowy (splash screen) wyświetla plik BMP z katalogu `icon50/`. Domyślnie jest to `splash.bmp`.
+
+### Wymagania pliku BMP:
+- **Rozdzielczość:** 320x240 lub 480x320 (zależnie od wyświetlacza)
+- **Format:** BMP 24-bit (RGB) lub 16-bit (RGB565)
+- **Kompresja:** Brak (uncompressed)
+- **Nazwa pliku:** `splash.bmp`
+
+### Jak zmienić grafikę:
+
+1. **Przygotuj obraz** w programie graficznym (Photoshop, GIMP, Paint.NET)
+   - Ustaw rozdzielczość 320x240 (dla standardowego TFT) lub 480x320 (dla ILI9488)
+   - Zapisz jako BMP 24-bit bez kompresji
+
+2. **Zamień plik** w folderze projektu:
+   ```
+   data/icon50/splash.bmp
+   ```
+   lub
+   ```
+   littlefs_data/icon50/splash.bmp
+   ```
+
+3. **Wgraj LittleFS** na ESP32:
+   - W PlatformIO: **Project Tasks → Upload File System Image**
+   - Lub przez terminal:
+     ```bash
+     pio run --target uploadfs
+     ```
+
+4. **Zrestartuj ESP32** - nowa grafika pojawi się przy kolejnym uruchomieniu
+
+### Konfiguracja czasu wyświetlania:
+W pliku `src/main.cpp` zmień wartość (domyślnie 10 sekund):
+```cpp
+while (!splashSkipped && (millis() - splashStart) < 10000) {
+```
+
+### Alternatywa - wyłączenie splash screen:
+Jeśli nie chcesz wyświetlać splash screen, usuń lub zmień nazwę pliku `splash.bmp`. ESP32 wyświetli wtedy czarny ekran z ikoną baterii.
+
 ## 📝 Licencja
 
 Ten projekt jest objęty licencją **MIT**.
