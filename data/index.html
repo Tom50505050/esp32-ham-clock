@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Konfiguracja ESP32-HAM-CLOCK</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --text: #c9d1d9;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-2: #238636;
+      --danger: #da3633;
+      --warn: #d29922;
+      --border: #30363d;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      line-height: 1.45;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 20px 120px;
+    }
+    h1 {
+      font-weight: 700;
+      letter-spacing: .3px;
+      margin: 0 0 18px;
+    }
+    .subtitle { color: var(--muted); margin-top: -10px; margin-bottom: 22px; }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+    @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+    @media (max-width: 720px) { .grid-3 { grid-template-columns: 1fr; } }
+
+    label { display: block; font-weight: 600; margin: 10px 0 6px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+      font: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(88,166,255,.15);
+    }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.06);
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      color: #fff; font-weight: 600; cursor: pointer; text-decoration: none;
+    }
+    .btn:hover { filter: brightness(1.05); }
+    .btn-accent { background: linear-gradient(180deg, #2ea043, #238636); border-color: rgba(46,160,67,.4); }
+    .btn-warn  { background: linear-gradient(180deg, #f0883e, #da3633); border-color: rgba(218,54,51,.4); }
+    .btn[disabled] { opacity: .6; cursor: not-allowed; }
+
+    .tabs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tab { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); cursor: pointer; color: #fff; font-weight: 600; }
+    .tab[aria-selected="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+    .section-title { display:flex; align-items:center; gap:10px; margin: 10px 0 8px; font-weight: 700; }
+    .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: rgba(88,166,255,.15); color: var(--accent); border: 1px solid rgba(88,166,255,.25); }
+    .success { color: #3fb950; }
+    .error   { color: #f85149; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { background: rgba(255,255,255,.04); color: var(--muted); font-weight: 600; }
+    tr:hover td { background: rgba(255,255,255,.03); }
+
+    .logs { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #0d1117; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; white-space: pre-wrap; }
+
+    footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); border-top: 1px solid var(--border); padding: 10px 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    footer .btn { min-width: 140px; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; }
+
+    /* Toolbar z kafelkami */
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin: 15px 0; padding: 15px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
+    .toolbar .btn { color: #ffffff !important; font-weight: 600; }
+    .toolbar button { color: #ffffff !important; font-weight: 600; background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02)); border: 1px solid rgba(255,255,255,.06); padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Konfiguracja ESP32-HAM-CLOCK</h1>
+    <div class="subtitle">Wersja WWW (polski) | <a href="/">Powrót do głównej</a> | <a href="/indexEN.html">English version</a></div>
+
+    <!-- Toolbar z kafelkami -->
+    <div class="toolbar">
+      <button onclick="location.reload()">Odśwież</button>
+      <a class="btn" href="/api/config" style="color:#ffffff;">API config</a>
+      <a class="btn" href="/api/spots" style="color:#ffffff;">API spots</a>
+      <a class="btn" href="/instruction" style="background:#28a745;color:#ffffff;">📖 Instrukcja</a>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Sekcje">
+      <button class="tab" role="tab" aria-selected="true" data-tab="wifi">WiFi</button>
+      <button class="tab" role="tab" data-tab="cluster">Cluster</button>
+      <button class="tab" role="tab" data-tab="pota">POTA</button>
+      <button class="tab" role="tab" data-tab="aprs">APRS-IS</button>
+      <button class="tab" role="tab" data-tab="user">Użytkownik</button>
+      <button class="tab" role="tab" data-tab="wx">Pogoda</button>
+      <button class="tab" role="tab" data-tab="display">Wyświetlacz</button>
+      <button class="tab" role="tab" data-tab="screens">Ekrany TFT</button>
+      <button class="tab" role="tab" data-tab="psk">PSKReporter</button>
+      <button class="tab" role="tab" data-tab="system">System</button>
+      <button class="tab" role="tab" data-tab="spots">Spoty (podejrzenie)</button>
+    </div>
+
+    <form id="cfgForm">
+
+      <section id="wifi" class="panel" role="tabpanel">
+        <div class="section-title">WiFi <span class="badge">2 sieci</span></div>
+        <div class="grid-2">
+          <div>
+            <label>SSID (WiFi 1)</label>
+            <input id="wifi_ssid" placeholder="nazwa sieci">
+          </div>
+          <div>
+            <label>Hasło (WiFi 1)</label>
+            <input id="wifi_pass" type="password" placeholder="hasło">
+          </div>
+          <div>
+            <label>SSID (WiFi 2, opcjonalnie)</label>
+            <input id="wifi_ssid2" placeholder="druga sieci">
+          </div>
+          <div>
+            <label>Hasło (WiFi 2)</label>
+            <input id="wifi_pass2" type="password" placeholder="hasło">
+          </div>
+        </div>
+      </section>
+
+      <section id="cluster" class="panel" role="tabpanel" hidden>
+        <div class="section-title">DX Cluster (telnet)</div>
+        <div class="grid-2">
+          <div>
+            <label>Host</label>
+            <input id="cluster_host" placeholder="e.g. dxcluster.org">
+          </div>
+          <div>
+            <label>Filtry CC-Cluster</label>
+            <div class="row" style="gap:8px; flex-wrap:wrap;">
+              <label><input type="checkbox" id="cluster_noann"> Bez ANN/WWV</label>
+              <label><input type="checkbox" id="cluster_nowcy"> Bez WCY</label>
+            </div>
+            <div class="hint">Włącza filtry reject zgodnie z CC-Cluster</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label><input type="checkbox" id="cluster_usefilters"> Użyj własnych filtrów (wpisz poniżej)</label>
+          <textarea id="cluster_filters" rows="3" placeholder="sh/dx 50&#10;set dx filter not (country=sp)"></textarea>
+        </div>
+      </section>
+
+      <section id="pota" class="panel" role="tabpanel" hidden>
+        <div class="section-title">POTA</div>
+        <div class="grid-2">
+          <div>
+            <label>Host (telnet)</label>
+            <input id="pota_host" placeholder="e.g. pota.host">
+          </div>
+          <div>
+            <label>Komenda filtra (opcjonalnie)</label>
+            <input id="pota_filter" placeholder="e.g. sh/spot">
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label>URL API POTA (JSON)</label>
+          <input id="pota_api_url" placeholder="https://api.pota.app/spot/activator">
+          <div class="hint">Backend odczyta JSON i wypełni spoty POTA w tabeli.</div>
+        </div>
+      </section>
+
+      <section id="aprs" class="panel" role="tabpanel" hidden>
+        <div class="section-title">APRS-IS</div>
+        <div class="grid-3">
+          <div>
+            <label>Host</label>
+            <input id="aprs_host" placeholder="e.g. rotate.aprs2.net">
+          </div>
+          <div>
+            <label>Port</label>
+            <input id="aprs_port" type="number" placeholder="14580">
+          </div>
+          <div>
+            <label>Callsign</label>
+            <input id="aprs_callsign" placeholder="SP9XXX">
+          </div>
+          <div>
+            <label>Passcode</label>
+            <input id="aprs_passcode" type="number" placeholder="12345">
+          </div>
+          <div>
+            <label>SSID</label>
+            <input id="aprs_ssid" type="number" placeholder="0-15">
+          </div>
+          <div>
+            <label>Symbol</label>
+            <input id="aprs_symbol" placeholder="/">
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:10px;">
+          <div>
+            <label>Komentarz beacon</label>
+            <input id="aprs_comment" maxlength="43" placeholder="ESP32 HAM Clock">
+            <div class="hint">Maksymalnie 43 znaki</div>
+          </div>
+          <div>
+            <label>ALERTY APRS (callsigns CSV)</label>
+            <input id="aprs_alert" placeholder="SP9ABC, SP9DEF, SP0XYZ">
+            <div class="hint">Oddziel przecinkami; wildcard * działa (np. SP9*).</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px; gap: 12px; flex-wrap:wrap;">
+          <label><input type="checkbox" id="aprs_beacon"> Włącz beacon</label>
+          <label><input type="checkbox" id="aprs_alert_enabled"> Alerty: włącz</label>
+          <label><input type="checkbox" id="aprs_alert_nearby_enabled"> Alerty: pobliskie</label>
+          <label><input type="checkbox" id="aprs_alert_wx_enabled"> Alerty: WX</label>
+        </div>
+        <div class="grid-3" style="margin-top:10px;">
+          <div>
+            <label>Min. czas od ostatniego alertu (s)</label>
+            <input id="aprs_alert_min_sec" type="number" placeholder="60">
+          </div>
+          <div>
+            <label>Czas wyświetlania ekranu alertu (s)</label>
+            <input id="aprs_alert_screen_sec" type="number" placeholder="10">
+          </div>
+          <div>
+            <label>Max dystans alertu pobliskiego (km)</label>
+            <input id="aprs_alert_distance_km" type="number" placeholder="50">
+          </div>
+        </div>
+      </section>
+
+      <section id="user" class="panel" role="tabpanel" hidden>
+        <div class="section-title">Użytkownik / QRZ</div>
+        <div class="grid-2">
+          <div>
+            <label>Twój znak</label>
+            <input id="user_callsign" placeholder="SP9XXX">
+          </div>
+          <div>
+            <label>Lokator (6-znakowy)</label>
+            <input id="user_locator" maxlength="6" placeholder="JO90" oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div>
+            <label>Szerokość geograficzna (LAT)</label>
+            <input id="user_lat" type="number" step="any" placeholder="np. 52.2297">
+          </div>
+          <div>
+            <label>Długość geograficzna (LON)</label>
+            <input id="user_lon" type="number" step="any" placeholder="np. 21.0122">
+          </div>
+          <div>
+            <label>QRZ.com użytkownik</label>
+            <input id="qrz_user" placeholder="login QRZ">
+          </div>
+          <div>
+            <label>QRZ.com hasło</label>
+            <input id="qrz_pass" type="password" placeholder="hasło QRZ">
+          </div>
+        </div>
+        <div class="hint">Współrzędne są opcjonalne – używane do obliczeń dystansu/kierunku. Jeśli nie podasz, obliczenia będą oparte na lokatorze.</div>
+      </section>
+
+      <section id="wx" class="panel" role="tabpanel" hidden>
+        <div class="section-title">Pogoda</div>
+        <div class="grid-2">
+          <div>
+            <label>OpenWeatherMap API Key</label>
+            <input id="weather_key" placeholder="klucz API">
+          </div>
+          <div>
+            <label>Strefa czasowa (godziny)</label>
+            <input id="timezone" type="number" placeholder="np. 1 dla CET">
+          </div>
+        </div>
+        <div class="hint">Klucz potrzebny do wyświetlania pogody. Strefa czasowa jest dodawana do UTC.</div>
+      </section>
+
+      <section id="display" class="panel" role="tabpanel" hidden>
+        <div class="section-title">Wyświetlacz TFT</div>
+        <div class="grid-3">
+          <div>
+            <label>Jasność podświetlenia (%)</label>
+            <input id="tft_backlight" type="number" min="10" max="100" placeholder="100">
+          </div>
+          <div>
+            <label>Odwróć kolory</label>
+            <select id="tft_invert">
+              <option value="false">Nie</option>
+              <option value="true">Tak</option>
+            </select>
+          </div>
+          <div>
+            <label>Język TFT</label>
+            <select id="tft_lang">
+              <option value="pl">Polski</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div>
+            <label>Rozmiar tabeli DX</label>
+            <select id="table_size">
+              <option value="normal">Normalny (więcej wierszy)</option>
+              <option value="enlarged">Powiększony (mniej wierszy)</option>
+            </select>
+          </div>
+          <div>
+            <label>Odcień menu (0-255)</label>
+            <input id="menu_hue" type="number" min="0" max="255" placeholder="0">
+            <div class="hint">0=czerwony, 85=zielony, 170=niebieski</div>
+          </div>
+          <div>
+            <label>Obrót wyświetlacza</label>
+            <select id="tft_rotation">
+              <option value="0">0° (normalnie)</option>
+              <option value="1">90° (obrót w prawo)</option>
+              <option value="2">180° (do góry nogami)</option>
+              <option value="3">270° (obrót w lewo)</option>
+            </select>
+            <div class="hint">Obrót ekranu TFT</div>
+          </div>
+        </div>
+
+        <!-- Kalibracja dotyku -->
+        <div class="section-title" style="margin-top:20px;">Kalibracja dotyku XPT2046</div>
+        <div class="grid-3">
+          <div>
+            <label>Touch X Min (raw)</label>
+            <input id="touch_xmin" type="number" min="0" max="4095" placeholder="300">
+          </div>
+          <div>
+            <label>Touch X Max (raw)</label>
+            <input id="touch_xmax" type="number" min="0" max="4095" placeholder="3800">
+          </div>
+          <div>
+            <label>Swap XY</label>
+            <select id="touch_swap">
+              <option value="false">Nie</option>
+              <option value="true">Tak</option>
+            </select>
+          </div>
+          <div>
+            <label>Touch Y Min (raw)</label>
+            <input id="touch_ymin" type="number" min="0" max="4095" placeholder="300">
+          </div>
+          <div>
+            <label>Touch Y Max (raw)</label>
+            <input id="touch_ymax" type="number" min="0" max="4095" placeholder="3800">
+          </div>
+          <div>
+            <label>Invert X</label>
+            <select id="touch_invx">
+              <option value="false">Nie</option>
+              <option value="true">Tak</option>
+            </select>
+          </div>
+          <div>
+            <label>Invert Y</label>
+            <select id="touch_invy">
+              <option value="false">Nie</option>
+              <option value="true">Tak</option>
+            </select>
+          </div>
+          <div>
+            <label>Rotacja dotyku</label>
+            <select id="touch_rot">
+              <option value="0">0°</option>
+              <option value="1" selected>1 (domyślnie)</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+            <div class="hint">0-3, zazwyczaj 1</div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:10px;">Wartości raw z zakresu 0-4095. Użyj ekranu kalibracji na TFT aby ustalić wartości.</div>
+      </section>
+
+      <section id="screens" class="panel" role="tabpanel" hidden>
+        <div class="section-title">Kolejność ekranów TFT <span class="badge">12 slotów</span></div>
+        <div class="grid-2">
+          <div>
+            <label>Strona 1</label>
+            <select id="screen_slot_0">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 2</label>
+            <select id="screen_slot_1">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 3</label>
+            <select id="screen_slot_2">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 4</label>
+            <select id="screen_slot_3">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 5</label>
+            <select id="screen_slot_4">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 6</label>
+            <select id="screen_slot_5">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 7</label>
+            <select id="screen_slot_6">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 8</label>
+            <select id="screen_slot_7">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 9</label>
+            <select id="screen_slot_8">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 10</label>
+            <select id="screen_slot_9">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 11</label>
+            <select id="screen_slot_10">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label>Strona 12</label>
+            <select id="screen_slot_11">
+              <option value="hamclock">HAM CLOCK</option>
+              <option value="dxcluster">DX CLUSTER</option>
+              <option value="aprsis">APRS-IS</option>
+              <option value="aprsradar">APRS RADAR</option>
+              <option value="bandinfo">BAND INFO</option>
+              <option value="sunspots">SUNSPOTS</option>
+              <option value="weather">WEATHER</option>
+              <option value="weatherforecast">WEATHER FORECAST</option>
+              <option value="pota">POTA</option>
+              <option value="hamalert">HAMALERT</option>
+              <option value="pskmap">PSK MAP</option>
+              <option value="matrix">MATRIX</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button type="button" class="btn" onclick="resetScreenOrder()">Przywróć domyślną</button>
+          <span id="screenResetOk" class="success" style="display:none;">Przywrócono!</span>
+        </div>
+      </section>
+
+      <section id="system" class="panel" role="tabpanel" hidden>
+        <div class="section-title">System / Diagnostyka</div>
+
+        <!-- Informacje podstawowe -->
+        <div class="grid-2">
+          <div>
+            <label>Wersja firmware</label>
+            <div id="fw_version" class="value">-</div>
+          </div>
+          <div>
+            <label>Czas pracy (uptime)</label>
+            <div id="uptime" class="value">-</div>
+          </div>
+          <div>
+            <label>Adres IP</label>
+            <div id="sys_ip" class="value">-</div>
+          </div>
+          <div>
+            <label>SSID WiFi</label>
+            <div id="sys_ssid" class="value">-</div>
+          </div>
+          <div>
+            <label>Siła sygnału WiFi (RSSI)</label>
+            <div id="sys_rssi" class="value">-</div>
+          </div>
+          <div>
+            <label>Adres MAC</label>
+            <div id="sys_mac" class="value">-</div>
+          </div>
+        </div>
+
+        <!-- Informacje o pamięci -->
+        <div class="section-title" style="margin-top:20px;">Pamięć i system plików</div>
+        <div class="grid-3">
+          <div>
+            <label>Wolna pamięć RAM (heap)</label>
+            <div id="sys_heap" class="value">-</div>
+          </div>
+          <div>
+            <label>Największy wolny blok</label>
+            <div id="sys_heap_max" class="value">-</div>
+          </div>
+          <div>
+            <label>LittleFS - wolne miejsce</label>
+            <div id="sys_littlefs_free" class="value">-</div>
+          </div>
+          <div>
+            <label>LittleFS - całkowity rozmiar</label>
+            <div id="sys_littlefs_total" class="value">-</div>
+          </div>
+        </div>
+
+        <!-- Informacje o sprzęcie -->
+        <div class="section-title" style="margin-top:20px;">Sprzęt</div>
+        <div class="grid-2">
+          <div>
+            <label>Chip model</label>
+            <div id="sys_chip" class="value">-</div>
+          </div>
+          <div>
+            <label>Częstotliwość CPU</label>
+            <div id="sys_cpu" class="value">-</div>
+          </div>
+          <div>
+            <label>Temperatura CPU</label>
+            <div id="sys_temp" class="value">-</div>
+          </div>
+          <div>
+            <label>Napięcie baterii / VCC</label>
+            <div id="sys_vcc" class="value">-</div>
+          </div>
+        </div>
+
+        <div class="hint" style="margin-top:15px;">Wskazówki: użyj przycisków na dole strony aby zapisać ustawienia lub przeładować stronę. Informacje systemowe aktualizują się automatycznie przy wczytywaniu konfiguracji.</div>
+      </section>
+
+      <section id="psk" class="panel" role="tabpanel" hidden>
+        <div class="section-title">PSKReporter <span class="badge">Live spots</span></div>
+
+        <!-- Konfiguracja PSKReporter -->
+        <div class="grid-3" style="margin-bottom:15px;">
+          <div>
+            <label>Znak odbiornika (receiver)</label>
+            <input id="psk_receiver" placeholder="np. SP3KON" maxlength="10">
+            <div class="hint">Filtruj spoty dla tego znaku</div>
+          </div>
+          <div>
+            <label>Maksymalnie spotów</label>
+            <input id="psk_maxspots" type="number" min="10" max="100" value="50">
+          </div>
+          <div>
+            <label>Okres czasu (godziny)</label>
+            <input id="psk_hours" type="number" min="1" max="24" value="1">
+            <div class="hint">Spoty z ostatnich X godzin</div>
+          </div>
+          <div>
+            <label>Filtr pasmo (opcjonalnie)</label>
+            <select id="psk_band">
+              <option value="">Wszystkie</option>
+              <option value="80m">80m</option>
+              <option value="40m">40m</option>
+              <option value="20m">20m</option>
+              <option value="15m">15m</option>
+              <option value="10m">10m</option>
+              <option value="6m">6m</option>
+            </select>
+          </div>
+          <div>
+            <label>Filtr tryb (opcjonalnie)</label>
+            <select id="psk_mode">
+              <option value="">Wszystkie</option>
+              <option value="FT8">FT8</option>
+              <option value="FT4">FT4</option>
+              <option value="JS8">JS8</option>
+              <option value="JT65">JT65</option>
+              <option value="JT9">JT9</option>
+              <option value="PSK31">PSK31</option>
+              <option value="PSK63">PSK63</option>
+            </select>
+          </div>
+          <div style="grid-column: span 3;">
+            <label>URL API PSKReporter (opcjonalnie)</label>
+            <input id="psk_url" placeholder="https://retrieve.pskreporter.info/query?" style="width:100%;">
+            <div class="hint">Własny adres API. Zostaw puste dla domyślnego (retrieve.pskreporter.info)</div>
+          </div>
+        </div>
+
+        <!-- HTTP Monitoring - Monitorowanie znaku -->
+        <div class="section-title" style="margin-top:20px;">HTTP Monitorowanie znaku</div>
+        <div class="grid-3" style="margin-bottom:15px;">
+          <div>
+            <label>Znak do monitorowania</label>
+            <input id="psk_monitor_callsign" placeholder="np. SP3KON" maxlength="10">
+            <div class="hint">Monitoruj ten znak w PSKReporter</div>
+          </div>
+          <div>
+            <label>Raport od (dni)</label>
+            <input id="psk_report_days" type="number" min="0" max="62" value="0">
+            <div class="hint">0=dzisiaj, 62=maksymalnie dni wstecz</div>
+          </div>
+          <div>
+            <label>Auto-odświeżanie</label>
+            <select id="psk_auto_refresh">
+              <option value="0">Wyłączone</option>
+              <option value="5" selected>Co 5 minut</option>
+              <option value="10">Co 10 minut</option>
+              <option value="15">Co 15 minut</option>
+              <option value="30">Co 30 minut</option>
+              <option value="60">Co 60 minut</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Znak</th><th>Lat</th><th>Lon</th><th>Pasmo</th><th>Tryb</th><th>SNR</th></tr>
+            </thead>
+            <tbody id="pskBody"><tr><td colspan="6">Kliknij 'Odśwież PSK' aby pobrać dane</td></tr></tbody>
+          </table>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button type="button" class="btn" onclick="loadPskSpots()">Odśwież PSK</button>
+          <button type="button" class="btn" onclick="clearPskSpots()">Wyczyść</button>
+        </div>
+        <div class="hint">Dane z PSKReporter API - ostatnie spoty z ostatniej godziny</div>
+      </section>
+
+      <section id="spots" class="panel" role="tabpanel" hidden>
+        <div class="section-title">Podgląd spotów (z backendu)</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Czas</th><th>Znak</th><th>Freq</th><th>Band</th><th>Mode</th><th>Kraj</th><th>Spotter</th></tr>
+            </thead>
+            <tbody id="spotsBody"><tr><td colspan="7">Ładowanie...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button type="button" class="btn" onclick="loadSpots()">Odśwież spoty</button>
+          <button type="button" class="btn" onclick="clearSpots()">Wyczyść tabelę</button>
+        </div>
+        <div class="logs" id="logs" style="margin-top:10px;"></div>
+        <div class="row" style="margin-top:8px; gap:8px;">
+          <button type="button" class="btn" onclick="toggleAuto()">Auto-odświeżanie: <span id="autoStatus">OFF</span></button>
+          <button type="button" class="btn" onclick="manualFetch()">Ręczne odświeżenie (fetch)</button>
+          <span class="kbd">Skrót: Ctrl+R = odśwież</span>
+        </div>
+      </section>
+
+    </form>
+  </div>
+
+  <footer>
+    <button type="button" class="btn btn-accent" id="btnSave" onclick="saveConfig()">
+      <span>Zapisz ustawienia</span>
+    </button>
+    <button type="button" class="btn" onclick="loadConfig()">Wczytaj z urządzenia</button>
+    <button type="button" class="btn btn-warn" onclick="hardReset()">Hard reset</button>
+    <button type="button" class="btn" onclick="location.reload()">Odśwież stronę</button>
+  </footer>
+
+  <script>
+    const screenOptionsDefault = ["hamclock","dxcluster","aprsis","aprsradar","bandinfo","sunspots","weather","weatherforecast","pota","hamalert","pskmap","matrix","off"];
+
+    function getScreenCodeLabel(code) {
+      const map = {
+        "hamclock":"HAM CLOCK","dxcluster":"DX CLUSTER","aprsis":"APRS-IS","aprsradar":"APRS RADAR",
+        "bandinfo":"BAND INFO","sunspots":"SUNSPOTS","weather":"WEATHER","weatherforecast":"WEATHER FORECAST",
+        "pota":"POTA","hamalert":"HAMALERT","pskmap":"PSK MAP","matrix":"MATRIX","unlishunter":"UNLIS HUNTER","off":"OFF"
+      };
+      return map[code] || code;
+    }
+
+    // Formatowanie bajtów na czytelne jednostki (KB, MB)
+    function formatBytes(bytes) {
+      if (bytes === 0 || bytes == null) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function applyScreenOrderToUI(orderArray) {
+      for (let i = 0; i < 12; i++) {
+        const sel = document.getElementById('screen_slot_' + i);
+        if (!sel) continue;
+        const code = (orderArray && orderArray[i]) ? orderArray[i] : screenOptionsDefault[i % screenOptionsDefault.length];
+        let found = false;
+        for (let opt of sel.options) { if (opt.value === code) { found = true; break; } }
+        if (!found) { for (let opt of sel.options) { if (opt.value === "off") { sel.value = "off"; found = true; break; } } }
+        if (!found) sel.value = sel.options[0].value; else sel.value = code;
+      }
+    }
+
+    function readScreenOrderFromUI() {
+      const arr = [];
+      for (let i = 0; i < 12; i++) {
+        const sel = document.getElementById('screen_slot_' + i);
+        arr.push(sel ? sel.value : "off");
+      }
+      return arr;
+    }
+
+    function resetScreenOrder() {
+      const order = ["hamclock","dxcluster","aprsis","aprsradar","bandinfo","sunspots","weather","weatherforecast","pota","hamalert","pskmap","matrix"];
+      applyScreenOrderToUI(order);
+      const ok = document.getElementById('screenResetOk');
+      ok.style.display = 'inline';
+      setTimeout(() => ok.style.display = 'none', 1500);
+    }
+
+    let configLoaded = false;
+    let autoRefresh = false;
+    let autoTimer = null;
+
+    async function loadConfig() {
+      try {
+        const r = await fetch('/api/config');
+        const d = await r.json();
+        if (!d || typeof d !== 'object') { log('Błąd: nieprawidłowa odpowiedź JSON'); return; }
+        document.getElementById('wifi_ssid').value = d.wifi_ssid || '';
+        document.getElementById('wifi_pass').value = d.wifi_pass || '';
+        document.getElementById('wifi_ssid2').value = d.wifi_ssid2 || '';
+        document.getElementById('wifi_pass2').value = d.wifi_pass2 || '';
+        document.getElementById('cluster_host').value = d.cluster_host || '';
+        document.getElementById('cluster_noann').checked = !!d.cluster_noann;
+        document.getElementById('cluster_nowcy').checked = !!d.cluster_nowcy;
+        document.getElementById('cluster_usefilters').checked = !!d.cluster_usefilters;
+        document.getElementById('cluster_filters').value = d.cluster_filters || '';
+        document.getElementById('pota_host').value = d.pota_host || '';
+        document.getElementById('pota_filter').value = d.pota_filter || '';
+        document.getElementById('pota_api_url').value = d.pota_api_url || '';
+        document.getElementById('aprs_host').value = d.aprs_host || '';
+        document.getElementById('aprs_port').value = (d.aprs_port != null) ? d.aprs_port : '';
+        document.getElementById('aprs_callsign').value = d.aprs_callsign || '';
+        document.getElementById('aprs_passcode').value = (d.aprs_passcode != null) ? d.aprs_passcode : '';
+        document.getElementById('aprs_ssid').value = (d.aprs_ssid != null) ? d.aprs_ssid : '';
+        document.getElementById('aprs_symbol').value = d.aprs_symbol || '';
+        document.getElementById('aprs_comment').value = d.aprs_comment || '';
+        document.getElementById('aprs_alert').value = d.aprs_alert || '';
+        document.getElementById('aprs_beacon').checked = !!d.aprs_beacon;
+        document.getElementById('aprs_alert_enabled').checked = !!d.aprs_alert_enabled;
+        document.getElementById('aprs_alert_nearby_enabled').checked = !!d.aprs_alert_nearby_enabled;
+        document.getElementById('aprs_alert_wx_enabled').checked = !!d.aprs_alert_wx_enabled;
+        document.getElementById('aprs_alert_min_sec').value = (d.aprs_alert_min_sec != null) ? d.aprs_alert_min_sec : '';
+        document.getElementById('aprs_alert_screen_sec').value = (d.aprs_alert_screen_sec != null) ? d.aprs_alert_screen_sec : '';
+        document.getElementById('aprs_alert_distance_km').value = (d.aprs_alert_distance_km != null) ? d.aprs_alert_distance_km : '';
+        document.getElementById('user_callsign').value = d.user_callsign || '';
+        document.getElementById('user_locator').value = d.user_locator || '';
+        document.getElementById('user_lat').value = (d.user_lat != null) ? d.user_lat : '';
+        document.getElementById('user_lon').value = (d.user_lon != null) ? d.user_lon : '';
+        document.getElementById('qrz_user').value = d.qrz_user || '';
+        document.getElementById('qrz_pass').value = d.qrz_pass || '';
+        document.getElementById('weather_key').value = d.weather_key || '';
+        document.getElementById('timezone').value = (d.timezone != null) ? d.timezone : '';
+        document.getElementById('tft_backlight').value = (d.tft_backlight != null) ? d.tft_backlight : '';
+        document.getElementById('tft_invert').value = d.tft_invert ? "true" : "false";
+        document.getElementById('tft_lang').value = (d.tft_lang === 'en') ? 'en' : 'pl';
+        document.getElementById('tft_rotation').value = (d.tft_rotation != null) ? d.tft_rotation : '0';
+        document.getElementById('table_size').value = (d.table_size === 'enlarged') ? 'enlarged' : 'normal';
+        // Touch calibration
+        document.getElementById('touch_xmin').value = (d.touch_xmin != null) ? d.touch_xmin : '';
+        document.getElementById('touch_xmax').value = (d.touch_xmax != null) ? d.touch_xmax : '';
+        document.getElementById('touch_ymin').value = (d.touch_ymin != null) ? d.touch_ymin : '';
+        document.getElementById('touch_ymax').value = (d.touch_ymax != null) ? d.touch_ymax : '';
+        document.getElementById('touch_swap').value = d.touch_swap ? 'true' : 'false';
+        document.getElementById('touch_invx').value = d.touch_invx ? 'true' : 'false';
+        document.getElementById('touch_invy').value = d.touch_invy ? 'true' : 'false';
+        document.getElementById('touch_rot').value = (d.touch_rot != null) ? d.touch_rot : '1';
+        document.getElementById('menu_hue').value = (d.menu_hue != null) ? d.menu_hue : '';
+        // PSKReporter settings
+        document.getElementById('psk_receiver').value = d.psk_receiver || '';
+        document.getElementById('psk_maxspots').value = (d.psk_maxspots != null) ? d.psk_maxspots : '50';
+        document.getElementById('psk_hours').value = (d.psk_hours != null) ? d.psk_hours : '1';
+        document.getElementById('psk_band').value = d.psk_band || '';
+        document.getElementById('psk_mode').value = d.psk_mode || '';
+        document.getElementById('psk_url').value = d.psk_url || '';
+        // HTTP Monitoring settings
+        document.getElementById('psk_monitor_callsign').value = d.psk_monitor_callsign || '';
+        document.getElementById('psk_report_days').value = (d.psk_report_days != null) ? d.psk_report_days : '0';
+        document.getElementById('psk_auto_refresh').value = (d.psk_auto_refresh != null) ? d.psk_auto_refresh : '5';
+        document.getElementById('fw_version').textContent = d.fw_version || '-';
+        document.getElementById('uptime').textContent = d.uptime || '-';
+        // Informacje systemowe
+        document.getElementById('sys_ip').textContent = d.sys_ip || '-';
+        document.getElementById('sys_ssid').textContent = d.sys_ssid || '-';
+        document.getElementById('sys_rssi').textContent = (d.sys_rssi != null) ? (d.sys_rssi + ' dBm') : '-';
+        document.getElementById('sys_mac').textContent = d.sys_mac || '-';
+        document.getElementById('sys_heap').textContent = (d.sys_heap != null) ? formatBytes(d.sys_heap) : '-';
+        document.getElementById('sys_heap_max').textContent = (d.sys_heap_max != null) ? formatBytes(d.sys_heap_max) : '-';
+        document.getElementById('sys_littlefs_free').textContent = (d.sys_littlefs_free != null) ? formatBytes(d.sys_littlefs_free) : '-';
+        document.getElementById('sys_littlefs_total').textContent = (d.sys_littlefs_total != null) ? formatBytes(d.sys_littlefs_total) : '-';
+        document.getElementById('sys_chip').textContent = d.sys_chip || '-';
+        document.getElementById('sys_cpu').textContent = (d.sys_cpu != null) ? (d.sys_cpu + ' MHz') : '-';
+        document.getElementById('sys_temp').textContent = (d.sys_temp != null) ? (d.sys_temp.toFixed(1) + ' °C') : '-';
+        document.getElementById('sys_vcc').textContent = (d.sys_vcc != null && d.sys_vcc > 0) ? (d.sys_vcc.toFixed(2) + ' V') : '-';
+        applyScreenOrderToUI(d.screen_order);
+        configLoaded = true;
+        log('Konfiguracja wczytana');
+      } catch (e) { log('Błąd wczytywania: ' + e.message); }
+    }
+
+    async function saveConfig() {
+      const btn = document.getElementById('btnSave');
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      btn.disabled = true; btn.appendChild(spinner);
+      try {
+        const payload = {
+          wifi_ssid: document.getElementById('wifi_ssid').value,
+          wifi_pass: document.getElementById('wifi_pass').value,
+          wifi_ssid2: document.getElementById('wifi_ssid2').value,
+          wifi_pass2: document.getElementById('wifi_pass2').value,
+          cluster_host: document.getElementById('cluster_host').value,
+          cluster_noann: document.getElementById('cluster_noann').checked,
+          cluster_nowcy: document.getElementById('cluster_nowcy').checked,
+          cluster_usefilters: document.getElementById('cluster_usefilters').checked,
+          cluster_filters: document.getElementById('cluster_filters').value,
+          pota_host: document.getElementById('pota_host').value,
+          pota_filter: document.getElementById('pota_filter').value,
+          pota_api_url: document.getElementById('pota_api_url').value,
+          aprs_host: document.getElementById('aprs_host').value,
+          aprs_port: parseInt(document.getElementById('aprs_port').value || '0',10),
+          aprs_callsign: document.getElementById('aprs_callsign').value,
+          aprs_passcode: parseInt(document.getElementById('aprs_passcode').value || '0',10),
+          aprs_ssid: parseInt(document.getElementById('aprs_ssid').value || '0',10),
+          aprs_symbol: document.getElementById('aprs_symbol').value,
+          aprs_comment: document.getElementById('aprs_comment').value,
+          aprs_alert: document.getElementById('aprs_alert').value,
+          aprs_beacon: document.getElementById('aprs_beacon').checked,
+          aprs_alert_enabled: document.getElementById('aprs_alert_enabled').checked,
+          aprs_alert_nearby_enabled: document.getElementById('aprs_alert_nearby_enabled').checked,
+          aprs_alert_wx_enabled: document.getElementById('aprs_alert_wx_enabled').checked,
+          aprs_alert_min_sec: parseInt(document.getElementById('aprs_alert_min_sec').value || '0',10),
+          aprs_alert_screen_sec: parseInt(document.getElementById('aprs_alert_screen_sec').value || '0',10),
+          aprs_alert_distance_km: parseFloat(document.getElementById('aprs_alert_distance_km').value || '0'),
+          user_callsign: document.getElementById('user_callsign').value,
+          user_locator: document.getElementById('user_locator').value,
+          user_lat: parseFloat(document.getElementById('user_lat').value || '0'),
+          user_lon: parseFloat(document.getElementById('user_lon').value || '0'),
+          qrz_user: document.getElementById('qrz_user').value,
+          qrz_pass: document.getElementById('qrz_pass').value,
+          weather_key: document.getElementById('weather_key').value,
+          timezone: parseInt(document.getElementById('timezone').value || '0',10),
+          tft_backlight: parseInt(document.getElementById('tft_backlight').value || '100',10),
+          tft_invert: document.getElementById('tft_invert').value === 'true',
+          tft_lang: document.getElementById('tft_lang').value,
+          tft_rotation: parseInt(document.getElementById('tft_rotation').value || '0', 10),
+          table_size: document.getElementById('table_size').value,
+          // Touch calibration
+          touch_xmin: parseInt(document.getElementById('touch_xmin').value || '300', 10),
+          touch_xmax: parseInt(document.getElementById('touch_xmax').value || '3800', 10),
+          touch_ymin: parseInt(document.getElementById('touch_ymin').value || '300', 10),
+          touch_ymax: parseInt(document.getElementById('touch_ymax').value || '3800', 10),
+          touch_swap: document.getElementById('touch_swap').value === 'true',
+          touch_invx: document.getElementById('touch_invx').value === 'true',
+          touch_invy: document.getElementById('touch_invy').value === 'true',
+          touch_rot: parseInt(document.getElementById('touch_rot').value || '1', 10),
+          menu_hue: parseInt(document.getElementById('menu_hue').value || '0',10),
+          // PSKReporter settings
+          psk_receiver: document.getElementById('psk_receiver').value || '',
+          psk_maxspots: parseInt(document.getElementById('psk_maxspots').value || '50', 10),
+          psk_hours: parseInt(document.getElementById('psk_hours').value || '1', 10),
+          psk_band: document.getElementById('psk_band').value || '',
+          psk_mode: document.getElementById('psk_mode').value || '',
+          psk_url: document.getElementById('psk_url').value || '',
+          // HTTP Monitoring settings
+          psk_monitor_callsign: document.getElementById('psk_monitor_callsign').value || '',
+          psk_report_days: parseInt(document.getElementById('psk_report_days').value || '0', 10),
+          psk_auto_refresh: parseInt(document.getElementById('psk_auto_refresh').value || '5', 10),
+          screen_order: readScreenOrderFromUI()
+        };
+        const r = await fetch('/api/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const txt = await r.text();
+        log('Zapisano: ' + txt);
+      } catch (e) { log('Błąd zapisu: ' + e.message); }
+      finally { btn.disabled = false; if (spinner.parentNode) spinner.parentNode.removeChild(spinner); }
+    }
+
+    async function hardReset() {
+      if (!confirm('Czy na pewno przywrócić fabryczne ustawienia? WiFi i zapisane dane zostaną zresetowane.')) return;
+      try {
+        const r = await fetch('/api/reset', { method:'POST' });
+        const txt = await r.text();
+        log('Hard reset: ' + txt);
+        setTimeout(() => location.reload(), 1500);
+      } catch (e) { log('Błąd resetu: ' + e.message); }
+    }
+
+    async function loadSpots() {
+      try {
+        const res = await fetch('/api/spots');
+        const data = await res.json();
+        const spots = Array.isArray(data) ? data : (Array.isArray(data.spots) ? data.spots : []);
+        const body = document.getElementById('spotsBody');
+        if (!spots.length) { body.innerHTML = '<tr><td colspan="7">Brak spotów</td></tr>'; return; }
+        body.innerHTML = spots.map(s => `<tr><td>${s.time||''}</td><td>${s.callsign||''}</td><td>${s.frequency||''}</td><td>${s.band||''}</td><td>${s.mode||''}</td><td>${s.country||''}</td><td>${s.spotter||''}</td></tr>`).join('');
+      } catch (e) { log('Błąd spotów: ' + e.message); }
+    }
+    function clearSpots() { document.getElementById('spotsBody').innerHTML = '<tr><td colspan="7">Wyczyszczono</td></tr>'; }
+
+    async function loadPskSpots() {
+      try {
+        const res = await fetch('/api/psk');
+        const data = await res.json();
+        const spots = Array.isArray(data.spots) ? data.spots : [];
+        const body = document.getElementById('pskBody');
+        if (!spots.length) { body.innerHTML = '<tr><td colspan="6">Brak spotów PSKReporter</td></tr>'; return; }
+        body.innerHTML = spots.map(s => `<tr><td>${s.callsign||''}</td><td>${s.lat||''}</td><td>${s.lon||''}</td><td>${s.band||''}</td><td>${s.mode||''}</td><td>${s.snr||''}</td></tr>`).join('');
+      } catch (e) { document.getElementById('pskBody').innerHTML = '<tr><td colspan="6">Błąd: ' + e.message + '</td></tr>'; }
+    }
+    function clearPskSpots() { document.getElementById('pskBody').innerHTML = '<tr><td colspan="6">Wyczyszczono</td></tr>'; }
+
+    function log(msg) { const el = document.getElementById('logs'); el.textContent += '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n'; el.scrollTop = el.scrollHeight; }
+    function toggleAuto() {
+      autoRefresh = !autoRefresh;
+      document.getElementById('autoStatus').textContent = autoRefresh ? 'ON (30s)' : 'OFF';
+      if (autoTimer) clearInterval(autoTimer);
+      if (autoRefresh) { autoTimer = setInterval(loadSpots, 30000); loadSpots(); }
+    }
+    async function manualFetch() { try { const r = await fetch('/api/fetch'); const t = await r.text(); log('Manual fetch: ' + t); loadSpots(); } catch (e) { log('Błąd fetch: ' + e.message); } }
+    function initTabs() {
+      const tabs = document.querySelectorAll('.tab');
+      const panels = document.querySelectorAll('section[role="tabpanel"]');
+      function activate(id) {
+        tabs.forEach(t => t.setAttribute('aria-selected', t.dataset.tab === id));
+        panels.forEach(p => p.hidden = p.id !== id);
+      }
+      tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.tab)));
+      activate('wifi');
+    }
+    initTabs();
+    loadConfig();
+    document.addEventListener('keydown', e => { if (e.ctrlKey && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); manualFetch(); } });
+  </script>
+</body>
+</html>
