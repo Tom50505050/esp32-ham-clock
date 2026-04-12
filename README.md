@@ -44,7 +44,7 @@ ESP32-HAM-CLOCK to zaawansowany zegar stacji amatorskiej oparty na ESP32 z obsł
 | Komponent | Specyfikacja |
 |-----------|-------------|
 | Mikrokontroler | ESP32 (ESP32-2432S028R) |
-| Wyświetlacz | TFT 2.8" 320x240 lub 480x320 (ILI9488) |
+| Wyświetlacz | TN3.5 Cal ILI9488 480x320 |
 | Touchscreen | XPT2046 |
 | Pamięć | 4MB Flash |
 | Zasilanie | 5V USB lub akumulator 18650 + TP4056 |
@@ -153,7 +153,7 @@ Dostępne endpointy:
 Ekran startowy (splash screen) wyświetla plik BMP z katalogu `icon50/`. Domyślnie jest to `splash.bmp`.
 
 ### Wymagania pliku BMP:
-- **Rozdzielczość:** 320x240 lub 480x320 (zależnie od wyświetlacza)
+- **Rozdzielczość:** 480x320 (TN3.5 Cal ILI9488)
 - **Format:** BMP 24-bit (RGB) lub 16-bit (RGB565)
 - **Kompresja:** Brak (uncompressed)
 - **Nazwa pliku:** `splash.bmp`
@@ -161,7 +161,7 @@ Ekran startowy (splash screen) wyświetla plik BMP z katalogu `icon50/`. Domyśl
 ### Jak zmienić grafikę:
 
 1. **Przygotuj obraz** w programie graficznym (Photoshop, GIMP, Paint.NET)
-   - Ustaw rozdzielczość 320x240 (dla standardowego TFT) lub 480x320 (dla ILI9488)
+   - Ustaw rozdzielczość 480x320 (dla TN3.5 Cal ILI9488)
    - Zapisz jako BMP 24-bit bez kompresji
 
 2. **Zamień plik** w folderze projektu:
