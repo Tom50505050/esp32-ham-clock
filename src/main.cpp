@@ -40,7 +40,7 @@ void normalizePolish(String &text);
 #endif
 
 // Wersja firmware
-#define FIRMWARE_VERSION "1.2b"
+#define FIRMWARE_VERSION "1.3"
 
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -48,6 +48,7 @@ void normalizePolish(String &text);
 #include <Preferences.h>
 #include <time.h>
 #include <ArduinoJson.h>
+#include <PubSubClient.h>
 #include <esp_rom_sys.h>
 #include <soc/rtc_cntl_reg.h>
 #include <HTTPClient.h>
@@ -138,36 +139,63 @@ String pskMonitorCallsign = "";
 int pskReportDays = 0;
 int pskAutoRefreshMinutes = 5;
 
+// MQTT PSK Reporter - alternatywny tryb
+bool pskMqttEnabled = false;              // Czy używać MQTT zamiast HTTP
+String pskMqttServer = "mqtt.pskreporter.info";  // Serwer MQTT
+int pskMqttPort = 1883;                   // Port MQTT (1883 dla plain, 8883 dla TLS)
+String pskMqttCallsign = "";             // Znak do monitorowania (jeśli pusty - monitoruje receiver)
+
+WiFiClient pskMqttWifiClient;
+PubSubClient pskMqttClient(pskMqttWifiClient);
+
+// Deklaracje funkcji MQTT
+void setupPskMqtt();
+void loopPskMqtt();
+void pskMqttCallback(char* topic, byte* payload, unsigned int length);
+void reconnectPskMqtt();
+void processPskMqttBuffer();
+
 // Menu PSK Map (tymczasowe ustawienia podczas edycji na ekranie)
 bool pskMapMenuOpen = false;
 String pskTempReceiver = "";
 String pskTempBand = "";
 String pskTempMode = "";
 int pskTempMaxSpots = 50;
+bool pskTempMqttEnabled = false;
+String pskTempMqttServer = "";
+String pskTempMqttCallsign = "";
 String pskKeyboardBuffer = "";  // Bufor dla klawiatury ekranowej
-int pskKeyboardTarget = 0;        // 1=znak, 2=max
+int pskKeyboardTarget = 0;        // 1=znak, 2=max, 3=mqtt_server, 4=mqtt_call
 enum PskMenuField { PSK_FIELD_NONE, PSK_FIELD_CALL, PSK_FIELD_BAND, PSK_FIELD_MODE, PSK_FIELD_MAXSPOTS,
+                    PSK_FIELD_MQTT_MODE, PSK_FIELD_MQTT_SERVER, PSK_FIELD_MQTT_CALL,
                     PSK_FIELD_KEYBOARD, PSK_FIELD_BAND_SELECT, PSK_FIELD_MODE_SELECT };
 PskMenuField pskActiveField = PSK_FIELD_NONE;
+bool pskKeyboardActive = false;  // Czy klawiatura PSK jest widoczna (blokuje nawigację)
 
 // Ścieżka do pliku BMP z mapą
 const char* PSK_MAP_BMP_PATH = "/Mapa swiata.bmp";
 
-// Zakres współrzędnych dla mapy (dostosować do pliku BMP!)
-const float MAP_LAT_MIN = -60.0f;  // min szerokość geograficzna
-const float MAP_LAT_MAX = 75.0f;   // max szerokość geograficzna
+// Zakres współrzędnych dla mapy (Plate Carrée - pełny zakres)
+const float MAP_LAT_MIN = -90.0f;  // min szerokość geograficzna (Antarktyda)
+const float MAP_LAT_MAX = 90.0f;   // max szerokość geograficzna (Arktyka)
 const float MAP_LON_MIN = -180.0f; // min długość geograficzna
 const float MAP_LON_MAX = 180.0f;  // max długość geograficzna
 const int MAP_DISPLAY_X = 0;       // pozycja X mapy na ekranie
-const int MAP_DISPLAY_Y = 32;    // pozycja Y (pod nagłówkiem)
+const int MAP_DISPLAY_Y = 0;       // pozycja Y (0 = pełny ekran)
 const int MAP_DISPLAY_W = 480;     // szerokość mapy
-const int MAP_DISPLAY_H = 256;   // wysokość mapy
+const int MAP_DISPLAY_H = 320;     // wysokość mapy (480x320)
 
 // Forward declarations for Screen Saver functions
 void resetScreenSaverActivity();
 void checkScreenSaverTimeout();
 void drawScreenSaverMenu();
 void handleScreenSaverMenuTouch(uint16_t x, uint16_t y);
+
+// Forward declarations for Screen Sleep functions
+void drawScreenSleepMenu();
+void handleScreenSleepMenuTouch(uint16_t x, uint16_t y);
+void enterScreenSleep();
+void wakeUpFromSleep();
 
 void savePreferences();
 void locatorToLatLon(String locator, double &lat, double &lon);
@@ -555,6 +583,16 @@ enum ScreenSaverType {
 const char* SAVER_TYPE_NAMES[] = {"ANALOG", "DIGITAL", "MATRIX"};
 ScreenSaverType screenSaverType = SAVER_ANALOG_CLOCK;  // Domyślnie analogowy
 
+// ========== UŚPIENIE EKRANU ==========
+const int DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN = 5;  // Domyślny czas w minutach
+bool screenSleepEnabled = false;                  // Czy uśpienie włączone
+int screenSleepTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN;  // Czas w minutach
+unsigned long screenSleepLastActivityMs = 0;      // Ostatnia aktywność
+bool screenSleepActive = false;                   // Czy uśpienie aktualnie działa
+bool screenSleepMenuActive = false;               // Czy jesteśmy w menu uśpienia
+ScreenType screenSleepPrevScreen = SCREEN_OFF;    // Poprzedni ekran przed uśpieniem
+int screenSleepMenuTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN; // Wartość w menu
+
 // ========== QRZ POPUP ==========
 bool qrzPopupActive = false;
 String qrzPopupCallsign = "";
@@ -659,7 +697,18 @@ static int getTableBottomForScreen(ScreenType screenNum) {
 
 extern uint16_t menuThemeColor;
 
+// Deklaracje zmiennych menu (definiowane później w kodzie)
+extern bool brightnessMenuActive;
+extern bool screenSaverMenuActive;
+extern bool screenSleepMenuActive;
+extern bool touchCalActive;
+extern bool pskKeyboardActive;  // Klawiatura PSK aktywna
+
 static void drawSwitchScreenFooter() {
+  // Nie rysuj strzałek gdy jesteśmy w menu ustawień
+  if (inMenu || brightnessMenuActive || screenSaverMenuActive || screenSleepMenuActive || touchCalActive || pskKeyboardActive) {
+    return;
+  }
   // Strzałki nawigacyjne - duże, blisko krawędzi (takie same na wszystkich ekranach)
   int arrowY = 290;
   int arrowSize = 12;
@@ -1071,8 +1120,11 @@ WiFiClient aprsClient;  // Klient dla APRS-IS
 
 struct PropagationData {
   String sfi;
+  String ssn;
   String kindex;
   String aindex;
+  String xray;
+  String muf;
   String updated;
   String hfBandLabel[4];
   String hfBandFreq[4];
@@ -1693,7 +1745,8 @@ void drawBatteryQuickUpdate(bool skipScreenCheck = false) {
   // Sprawdź czy dzielnik jest podłączony
   if (batteryVoltage < 1.5f || batteryVoltage > 5.0f) return;
   
-  int x = 8, y = 10, w = 26, h = 12;
+  int screenW = tft.width();
+  int x = screenW - 120, y = 10, w = 26, h = 12;  // Prawa strona ekranu (bardziej w lewo)
   
   // Wyczyść obszar ikony baterii przed narysowaniem (unika pasków/śmieci)
   tft.fillRect(x - 2, y - 2, w + 6, h + 4, TFT_BLACK);
@@ -1712,12 +1765,12 @@ void drawBatteryQuickUpdate(bool skipScreenCheck = false) {
   tft.fillRect(x + 2, y + 2, fillW, h - 4, color);
   tft.fillRect(x + 2 + fillW, y + 2, (w - 4) - fillW, h - 4, TFT_BLACK);
   
-  // Tekst z napięciem i procentem - wyczyść tło przed napisaniem
-  tft.fillRect(x + 32, y + 3, 55, 8, TFT_BLACK);  // Wyczyść obszar tekstu
+  // Tekst z procentem baterii - wyczyść tło przed napisaniem
+  tft.fillRect(x + 32, y + 3, 30, 8, TFT_BLACK);  // Wyczyść obszar tekstu
   tft.setTextSize(1);
   tft.setTextColor(TFT_WHITE);
   char batBuf[16];
-  snprintf(batBuf, sizeof(batBuf), "%.1fV %d%%", batteryVoltage, batteryPercentage);
+  snprintf(batBuf, sizeof(batBuf), "%d%%", batteryPercentage);
   tft.setCursor(x + 32, y + 3);
   tft.print(batBuf);
 }
@@ -1905,7 +1958,7 @@ void drawWelcomeScreenYellow() {
   const int lineGap = 30;
   String lines[] = {
     "ESP32-HAM-CLOCK",
-    "version 1.2b",
+    "version 1.3",
     "Original: SP3KON",
     "Modified by: SP9TNV",
     "License: MIT",
@@ -2726,42 +2779,45 @@ void drawWifiSignalBars(int x, int y, int strength = -1) {
     }
   }
   
-  // Kolory: zielony gdy jest zasięg, czerwony gdy brak zasięgu
-  uint16_t activeColor = TFT_GREEN;   // Zasięg dostępny
+  // Kolory dla belek WiFi - gradient od czerwonego do zielonego
+  uint16_t bar1Color = TFT_RED;       // Belka 1 (słaby sygnał)
+  uint16_t bar2Color = TFT_ORANGE;    // Belka 2
+  uint16_t bar3Color = TFT_YELLOW;    // Belka 3
+  uint16_t bar4Color = TFT_GREEN;     // Belka 4 (mocny sygnał)
   uint16_t noSignalColor = TFT_RED;   // Brak zasięgu
-  uint16_t emptyColor = TFT_DARKGREY; // Puste belki (gdy jest sygnał, ale nie max)
+  uint16_t emptyColor = TFT_DARKGREY; // Puste belki
   
-  // 4 belki o rosnącej wysokości (jak w telefonie)
-  // Belka 1 (najniższa)
+  // 4 belki o rosnącej wysokości w różnych kolorach (gradient)
+  // Belka 1 (najniższa) - CZERWONA
   if (strength >= 1) {
-    tft.fillRect(x, y + 12, 6, 4, activeColor);
+    tft.fillRect(x, y + 12, 6, 4, bar1Color);
   } else if (strength == 0) {
-    tft.fillRect(x, y + 12, 6, 4, noSignalColor); // Czerwona gdy brak sygnału
+    tft.fillRect(x, y + 12, 6, 4, noSignalColor);
   } else {
     tft.drawRect(x, y + 12, 6, 4, emptyColor);
   }
   
-  // Belka 2
+  // Belka 2 - POMARAŃCZOWA
   if (strength >= 2) {
-    tft.fillRect(x + 8, y + 8, 6, 8, activeColor);
+    tft.fillRect(x + 8, y + 8, 6, 8, bar2Color);
   } else if (strength == 0) {
     tft.fillRect(x + 8, y + 8, 6, 8, noSignalColor);
   } else {
     tft.drawRect(x + 8, y + 8, 6, 8, emptyColor);
   }
   
-  // Belka 3
+  // Belka 3 - ŻÓŁTA
   if (strength >= 3) {
-    tft.fillRect(x + 16, y + 4, 6, 12, activeColor);
+    tft.fillRect(x + 16, y + 4, 6, 12, bar3Color);
   } else if (strength == 0) {
     tft.fillRect(x + 16, y + 4, 6, 12, noSignalColor);
   } else {
     tft.drawRect(x + 16, y + 4, 6, 12, emptyColor);
   }
   
-  // Belka 4 (najwyższa)
+  // Belka 4 (najwyższa) - ZIELONA
   if (strength >= 4) {
-    tft.fillRect(x + 24, y, 6, 16, activeColor);
+    tft.fillRect(x + 24, y, 6, 16, bar4Color);
   } else if (strength == 0) {
     tft.fillRect(x + 24, y, 6, 16, noSignalColor);
   } else {
@@ -2790,10 +2846,11 @@ void updateScreen1HeaderClock() {
   }
   strcpy(lastTimeBuffer, timeBuffer);
   
+  // ZEGAR PO LEWEJ STRONIE - odświeżanie co sekundę
   String timeStr = String(timeBuffer);
   tft.setTextSize(2);
   int timeWidth = tft.textWidth(timeStr);
-  int timeX = screenW - 50 - timeWidth; // Lewo od ikony WiFi
+  int timeX = 10; // Lewa strona nagłówka
   int timeY = 12;
   
   // Wyczyść tło pod zegarem
@@ -2804,165 +2861,33 @@ void updateScreen1HeaderClock() {
 }
 
 void updateDxClusterClock() {
-  if (!tftInitialized || currentScreen != SCREEN_DX_CLUSTER || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  static char lastTimeBuffer[6] = "";
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-
-  if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
-    return;
-  }
-  strcpy(lastTimeBuffer, timeBuffer);
-
-  tft.fillRect(400, 0, 80, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  int timeWidth = tft.textWidth(timeBuffer);
-  tft.setCursor(460 - timeWidth, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  return;
 }
 
 void updateWeatherClock() {
-  if (!tftInitialized || currentScreen != SCREEN_WEATHER_DSP || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  static char lastTimeBuffer[6] = "";
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-
-  if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
-    return;
-  }
-  strcpy(lastTimeBuffer, timeBuffer);
-
-  tft.fillRect(400, 0, 80, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  int timeWidth = tft.textWidth(timeBuffer);
-  tft.setCursor(460 - timeWidth, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  return;
 }
 
 void updateWeatherForecastClock() {
-  if (!tftInitialized || currentScreen != SCREEN_WEATHER_FORECAST || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  static char lastTimeBuffer[6] = "";
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-
-  if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
-    return;
-  }
-  strcpy(lastTimeBuffer, timeBuffer);
-
-  tft.fillRect(400, 0, 80, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  int timeWidth = tft.textWidth(timeBuffer);
-  tft.setCursor(460 - timeWidth, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  return;
 }
 
 void updateBandInfoClock() {
-  if (!tftInitialized || currentScreen != SCREEN_BAND_INFO || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  static char lastTimeBuffer[6] = "";
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-
-  if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
-    return;
-  }
-  strcpy(lastTimeBuffer, timeBuffer);
-
-  tft.fillRect(400, 0, 80, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  int timeWidth = tft.textWidth(timeBuffer);
-  tft.setCursor(460 - timeWidth, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  return;
 }
 
 void updateHamalertClock() {
-  if (!tftInitialized || currentScreen != SCREEN_HAMALERT_CLUSTER || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  static char lastTimeBuffer[6] = "";
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-
-  if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
-    return;
-  }
-  strcpy(lastTimeBuffer, timeBuffer);
-
-  tft.fillRect(400, 0, 80, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  int timeWidth = tft.textWidth(timeBuffer);
-  tft.setCursor(460 - timeWidth, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  return;
 }
 
 void updatePotaClusterClock() {
-  if (!tftInitialized || currentScreen != SCREEN_POTA_CLUSTER || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  static char lastTimeBuffer[6] = "";
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-
-  if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
-    return;
-  }
-  strcpy(lastTimeBuffer, timeBuffer);
-
-  tft.fillRect(400, 0, 80, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  int timeWidth = tft.textWidth(timeBuffer);
-  tft.setCursor(460 - timeWidth, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  return;
 }
 
 void updateScreen1Header() {
@@ -3017,7 +2942,7 @@ void updateScreen1Header() {
   // 3. IKONA WiFi W PRAWYM GÓRNYM ROGU - BELKI JAK W TELEFONIE
   drawWifiSignalBars(screenW - 45, 8);
 
-  // 4. ZEGAR W PRAWYM GÓRNYM ROGU NAGŁÓWKA
+  // 4. ZEGAR W LEWYM GÓRNYM ROGU NAGŁÓWKA
   struct tm timeinfo;
   if (getLocalTime(&timeinfo, 1)) {
     char timeBuffer[6];
@@ -3025,7 +2950,7 @@ void updateScreen1Header() {
     String timeStr = String(timeBuffer);
     tft.setTextSize(2);
     int timeWidth = tft.textWidth(timeStr);
-    int timeX = screenW - 50 - timeWidth; // Lewo od ikony WiFi
+    int timeX = 10; // Lewa strona nagłówka
     int timeY = 12;
     // Wyczyść tło pod zegarem
     tft.fillRect(timeX - 2, timeY - 2, timeWidth + 4, 20, TFT_RADIO_ORANGE);
@@ -3277,33 +3202,8 @@ void updateScreen1Date() {
 }
 
 void updateScreen2Clock() {
-  if (!tftInitialized || currentScreen != SCREEN_DX_CLUSTER || inMenu) {
-    return;
-  }
-
-  static unsigned long lastClockRedrawMs = 0;
-  unsigned long now = millis();
-  if (lastClockRedrawMs != 0 && (now - lastClockRedrawMs) < DX_SCREEN_MIN_REDRAW_MS) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo, 1)) {
-    return;
-  }
-
-  char timeBuffer[10];
-  strftime(timeBuffer, 10, "%H:%M Z", &timeinfo);
-  int timeWidth = strlen(timeBuffer) * 12;
-  int timeX = 475 - timeWidth;
-
-  // Wyczyść tylko obszar godziny w nagłówku (pomarańczowy pasek)
-  tft.fillRect(timeX - 2, 4, timeWidth + 6, 24, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setCursor(timeX, 8);
-  tft.print(timeBuffer);
-  lastClockRedrawMs = now;
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka DX Cluster
+  return;
 }
 
 bool spotMatchesScreen2Filters(const DXSpot &spot) {
@@ -3733,6 +3633,9 @@ void drawPotaCluster() {
   int potaX = 45;
   tft.setCursor(potaX, 8);
   tft.print(potaText);
+
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
 
   // ZEGAR w prawym górnym rogu - USUNIĘTY
   // struct tm timeinfo;
@@ -4195,6 +4098,9 @@ void drawHamalertCluster() {
   tft.setCursor(35, 8);
   tft.print("HAMALERT.org");
 
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
+
   // ZEGAR - rysowany osobno przez updateHamalertClock()
 
   int yPos = 40;
@@ -4565,8 +4471,8 @@ const char* screenTypeToCodeStr(ScreenType t) {
     case SCREEN_DX_CLUSTER: return "dxcluster";
     case SCREEN_APRS_IS: return "aprsis";
     case SCREEN_APRS_RADAR: return "aprsradar";
-    case SCREEN_BAND_INFO: return "bandinfo";
-    case SCREEN_SUN_SPOTS: return "sunspots";
+    case SCREEN_BAND_INFO: return "solarindex";
+    case SCREEN_SUN_SPOTS: return "propagacja";
     case SCREEN_WEATHER_DSP: return "weather";
     case SCREEN_WEATHER_FORECAST: return "weatherforecast";
     case SCREEN_POTA_CLUSTER: return "pota";
@@ -4588,8 +4494,8 @@ ScreenType screenCodeToType(const String &code) {
   if (c == "dxcluster") return SCREEN_DX_CLUSTER;
   if (c == "aprsis") return SCREEN_APRS_IS;
   if (c == "aprsradar") return SCREEN_APRS_RADAR;
-  if (c == "bandinfo") return SCREEN_BAND_INFO;
-  if (c == "sunspots") return SCREEN_SUN_SPOTS;
+  if (c == "bandinfo" || c == "solarindex" || c == "solar indeks") return SCREEN_BAND_INFO;
+  if (c == "sunspots" || c == "propagacja") return SCREEN_SUN_SPOTS;
   if (c == "weather") return SCREEN_WEATHER_DSP;
   if (c == "weatherforecast" || c == "forecast") return SCREEN_WEATHER_FORECAST;
   if (c == "pota") return SCREEN_POTA_CLUSTER;
@@ -4714,8 +4620,15 @@ void handleTouchNavigation() {
   int16_t rawX = 0;
   int16_t rawY = 0;
   if (readRawTouchPoint(rawX, rawY)) {
+    // Jeśli ekran jest w trybie uśpienia - wybudź go
+    if (screenSleepActive) {
+      wakeUpFromSleep();
+      return;
+    }
     mapRawToScreen(rawX, rawY, x, y);
     resetScreenSaverActivity();  // Reset wygaszacza przy aktywności użytkownika
+    // Reset timera uśpienia przy aktywności
+    screenSleepLastActivityMs = millis();
     bool isNewTap = false;
     if (!touchActive) {
       if ((now - lastTouchMs) <= 150) {
@@ -4818,6 +4731,10 @@ void handleTouchNavigation() {
     if (inMenu) {
       if (screenSaverMenuActive) {
         handleScreenSaverMenuTouch(x, y);
+        return;
+      }
+      if (screenSleepMenuActive) {
+        handleScreenSleepMenuTouch(x, y);
         return;
       }
       if (currentScreen == SCREEN_HAM_CLOCK) {
@@ -4969,10 +4886,6 @@ void handleTouchNavigation() {
         return;
       }
     }
-    if (currentScreen == SCREEN_PSK_MAP) {
-      handlePskMapTouch(x, y);
-      return;
-    }
     if (currentScreen == SCREEN_WEATHER_DSP || currentScreen == SCREEN_WEATHER_FORECAST) {
       if (x < menuHitW && y < menuHitH) {
         inMenu = true;
@@ -4983,18 +4896,27 @@ void handleTouchNavigation() {
 
     // Nawigacja: dolne obszary dotyku (ok. 80x180)
     // Zamienione kierunki: lewa strona = w prawo (next), prawa strona = w lewo (prev)
-    const uint16_t cornerY = 60;
-    const uint16_t cornerX = 80;
-    if (y >= cornerY && x < cornerX) {
-      currentScreen = getNextScreenId(currentScreen);
-      drawScreen(currentScreen);
-      resetTftAutoSwitchTimer();
-      LOGV_PRINTF("[TOUCH] Ekran zmieniony na: %d (tap left -> next)\n", currentScreen);
-    } else if (y >= cornerY && x >= (480 - cornerX)) {
-      currentScreen = getPrevScreenId(currentScreen);
-      drawScreen(currentScreen);
-      resetTftAutoSwitchTimer();
-      LOGV_PRINTF("[TOUCH] Ekran zmieniony na: %d (tap right -> prev)\n", currentScreen);
+    // TYLKO gdy nie jesteśmy w żadnym menu i nie ma aktywnej klawiatury
+    if (!inMenu && !brightnessMenuActive && !screenSaverMenuActive && !screenSleepMenuActive && !touchCalActive && !pskKeyboardActive) {
+      const uint16_t cornerY = 60;
+      const uint16_t cornerX = 80;
+      if (y >= cornerY && x < cornerX) {
+        currentScreen = getNextScreenId(currentScreen);
+        drawScreen(currentScreen);
+        resetTftAutoSwitchTimer();
+        return;
+      } else if (y >= cornerY && x >= (480 - cornerX)) {
+        currentScreen = getPrevScreenId(currentScreen);
+        drawScreen(currentScreen);
+        resetTftAutoSwitchTimer();
+        return;
+      }
+    }
+
+    // Obsługa PSK map - na końcu, aby nie blokować nawigacji w rogach
+    if (currentScreen == SCREEN_PSK_MAP) {
+      handlePskMapTouch(x, y);
+      return;
     }
   } else {
     touchActive = false;
@@ -5022,7 +4944,10 @@ drawHamburgerMenuButton3D(5, 7);
 tft.setTextSize(2);
 tft.setCursor(35, 8);
 tft.print(clusterHost);
-  
+
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
+
   // ZEGAR - rysowany osobno przez updateDxClusterClock()
 
   // 2. NAGŁÓWKI TABELI
@@ -6072,7 +5997,7 @@ void drawBrightnessMenu() {
   const int closeX = saverX + btnW + btnGap;
   drawFilterTile(saveX, btnY, btnW, btnH, tr(TR_SAVE), false);
   drawFilterTile(defaultX, btnY, btnW, btnH, tr(TR_DEFAULT), false);
-  drawFilterTile(saverX, btnY, btnW, btnH, "WYGASZACZ", false);
+  drawFilterTile(saverX, btnY, btnW, btnH, "USPIENIE", false);
   drawFilterTile(closeX, btnY, btnW, btnH, tr(TR_CLOSE), false);
 }
 
@@ -6415,21 +6340,22 @@ void handleBrightnessMenuTouch(uint16_t x, uint16_t y, bool isNewTap) {
     return;
   }
   
-  // Przycisk WYGASZACZ - otwórz menu wygaszacza
+  // Przycisk UŚPIENIE - otwórz menu uśpienia
   if (isPointInRect(x, y, saverX, btnY, btnW, btnH)) {
     brightnessMenuActive = false;  // Zamknij menu jasności
-    screenSaverMenuActive = true;
-    drawScreenSaverMenu();
+    screenSleepMenuActive = true;
+    drawScreenSleepMenu();
     return;
   }
 }
 
-// Ekran 6: APRS-IS
+// Ekran 6: APRS-IS - zegar tylko dla RADAR, nie dla listy
 void updateScreen6Clock() {
   if (!tftInitialized || inMenu) {
     return;
   }
-  if (currentScreen != SCREEN_APRS_IS && currentScreen != SCREEN_APRS_RADAR) {
+  // Zegar tylko dla APRS_RADAR, nie dla APRS_IS (lista)
+  if (currentScreen != SCREEN_APRS_RADAR) {
     return;
   }
 
@@ -6444,10 +6370,10 @@ void updateScreen6Clock() {
   char timeBuffer[6];
   strftime(timeBuffer, 6, "%H:%M", &timeinfo);
   int timeWidth = strlen(timeBuffer) * 12;
-  bool radarMode = (currentScreen == SCREEN_APRS_RADAR);
-  uint16_t topClearColor = radarMode ? TFT_BLACK : TFT_RADIO_ORANGE;
-  uint16_t timeColor = radarMode ? TFT_WHITE : TFT_BLACK;
-  int timeY = radarMode ? 5 : 8;
+  bool radarMode = true; // Zawsze radar mode tutaj
+  uint16_t topClearColor = TFT_BLACK;
+  uint16_t timeColor = TFT_WHITE;
+  int timeY = 5;
 
   if (strcmp(lastDrawnTime, timeBuffer) == 0 && lastRadarMode == radarMode) {
     return;
@@ -6808,21 +6734,17 @@ void drawAprsIs() {
   // IKONA MENU (3D)
   drawHamburgerMenuButton3D(5, 7);
 
-  // Nazwa serwera APRS-IS - przesuniĂ„â„˘ta w prawo (x=35 zamiast 5), by zrobiĂ„â€ˇ miejsce na menu
+  // Nazwa serwera APRS-IS - przesuniÄta w prawo (x=35 zamiast 5), by zrobiÄ‡ miejsce na menu
   tft.setTextSize(2);
   tft.setCursor(35, 8);
   tft.print("APRS-IS");
-  
-  struct tm timeinfo;
-  if (getTimeWithTimezone(&timeinfo)) {
-    char timeBuffer[6];
-    strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-    int timeWidth = strlen(timeBuffer) * 12;
-    tft.setCursor(480 - timeWidth - 4, 8);
-    tft.print(timeBuffer);
-  }
 
-  // 2. NAGÄąÂÄ‚â€śWKI TABELI
+  // Ikona WiFi w gÃ³rnym prawym rogu
+  drawWifiSignalBars(445, 4);
+
+  // ZEGAR USUNIÄTY z nagÅ‚Ã³wka APRS-IS
+
+  // 2. NAGÅÃ“WKI TABELI
   int yPos = 40;
   const bool enlarged = isDxTableEnlarged();
   tft.setTextColor(TFT_DARKGREY);
@@ -6951,6 +6873,7 @@ void drawAprsRadar() {
   tft.setCursor(aprsBottomX, tft.height() - 20);
   tft.print(aprsTitleBottom);
 
+  // ZEGAR W PRAWIN GÓRNYM ROGU
   struct tm timeinfo;
   if (getTimeWithTimezone(&timeinfo)) {
     char timeBuffer[6];
@@ -7050,13 +6973,19 @@ static bool parsePropagationXml(const String &xml, PropagationData &out) {
   setPropagationBandDefaults(out);
 
   String sfi = extractXmlTagValue(xml, "solarflux");
+  String ssn = extractXmlTagValue(xml, "sunspots");
   String kindex = extractXmlTagValue(xml, "kindex");
   String aindex = extractXmlTagValue(xml, "aindex");
+  String xray = extractXmlTagValue(xml, "xray");
+  String muf = extractXmlTagValue(xml, "muf");
   String updated = extractXmlTagValue(xml, "updated");
 
   sfi.trim();
+  ssn.trim();
   kindex.trim();
   aindex.trim();
+  xray.trim();
+  muf.trim();
   updated.trim();
 
   if (sfi.length() == 0 || kindex.length() == 0) {
@@ -7064,8 +6993,11 @@ static bool parsePropagationXml(const String &xml, PropagationData &out) {
   }
 
   out.sfi = sfi;
+  out.ssn = ssn.length() ? ssn : "--";
   out.kindex = kindex;
   out.aindex = aindex.length() ? aindex : "--";
+  out.xray = xray.length() ? xray : "--";
+  out.muf = muf.length() ? muf : "--";
   out.updated = updated.length() ? convertPropagationTimeToLocal(updated) : "--";
   out.valid = true;
   out.lastError = "";
@@ -7119,25 +7051,8 @@ bool fetchPropagationData() {
 }
 
 void updateScreen3Clock() {
-  if (!tftInitialized || currentScreen != 3 || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo, 1)) {
-    return;
-  }
-
-  char timeBuffer[10];
-  strftime(timeBuffer, 10, "%H:%M Z", &timeinfo);
-  int timeWidth = strlen(timeBuffer) * 12;
-  int timeX = 315 - timeWidth;
-
-  tft.fillRect(timeX - 2, 4, timeWidth + 6, 24, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setCursor(timeX, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka propagacji (Sun Spots)
+  return;
 }
 
 uint32_t computeScreen3Signature() {
@@ -7269,6 +7184,9 @@ void drawSunSpots() {
   tft.setCursor(35, 8);
   tft.print((tftLanguage == TFT_LANG_EN) ? "PROPAGATION" : "PROPAGACJA");
 
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
+
   // Wyłączono - zegar tylko na górnym pasku
   /*
   struct tm timeinfo;
@@ -7295,25 +7213,8 @@ void drawSunSpots() {
 }
 
 void updateScreen4Clock() {
-  if (!tftInitialized || currentScreen != 4 || inMenu) {
-    return;
-  }
-
-  struct tm timeinfo;
-  if (!getTimeWithTimezone(&timeinfo)) {
-    return;
-  }
-
-  char timeBuffer[6];
-  strftime(timeBuffer, 6, "%H:%M", &timeinfo);
-  int timeWidth = strlen(timeBuffer) * 12;
-  int timeX = 475 - timeWidth;
-
-  tft.fillRect(timeX - 2, 4, timeWidth + 6, 24, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setCursor(timeX, 8);
-  tft.print(timeBuffer);
+  // ZEGAR WYŁĄCZONY - usunięty z nagłówka propagacji (Sun Spots)
+  return;
 }
 
 uint32_t computeScreen4Signature() {
@@ -7351,61 +7252,176 @@ uint32_t computeScreen4Signature() {
 }
 
 void drawBandInfoBody() {
-  const int bodyTop = 32;
-  const int bodyBottom = 220;
+  const int bodyTop = 45; // Zaczynamy niżej, pod linią
+  const int bodyBottom = 280;
   tft.fillRect(0, bodyTop, 480, bodyBottom - bodyTop, TFT_BLACK);
 
-  int yPos = 40;
-  tft.setTextColor(TFT_DARKGREY);
-  tft.setTextSize(2);
-  tft.setCursor(5, yPos);
-  tft.print("BAND");
-  tft.setCursor(150, yPos);
-  tft.print("DAY");
-  tft.setCursor(320, yPos);
-  tft.print("NIGHT");
-  tft.drawFastHLine(0, yPos + 30, 480, TFT_DARKGREY);
-  yPos += 26; //byÄąâ€šo 16
+  // === GÓRNA SEKCJA - INDEKSY SŁONECZNE (3 kolumny) ===
+  int yPos = bodyTop + 5;
+  int lineHeight = 22;
 
+  // Pierwsza linia: SFI | A-idx | MUF (w ramce)
+  tft.setTextSize(2);
+
+  // SFI
+  tft.setTextColor(TFT_CYAN);
+  tft.setCursor(10, yPos);
+  tft.print("SFI:");
+  tft.setTextColor(TFT_WHITE);
+  tft.print(propagationData.sfi.length() ? propagationData.sfi : "--");
+
+  // A-idx (środek)
+  tft.setTextColor(TFT_CYAN);
+  tft.setCursor(130, yPos);
+  tft.print("A-idx:");
+  tft.setTextColor(TFT_WHITE);
+  tft.print(propagationData.aindex.length() ? propagationData.aindex : "--");
+
+  // MUF w niebieskiej ramce z żółtym tekstem
+  tft.fillRect(280, yPos - 2, 145, 22, TFT_BLUE);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(290, yPos);
+  String mufText = propagationData.muf.length() ? propagationData.muf : "--";
+  tft.print("MUF:" + mufText + "MHz");
+
+  // Druga linia: SSN | K-idx | X-Ray (w ramce)
+  yPos += lineHeight;
+
+  // SSN
+  tft.setTextColor(TFT_CYAN);
+  tft.setCursor(10, yPos);
+  tft.print("SSN:");
+  tft.setTextColor(TFT_WHITE);
+  tft.print(propagationData.ssn.length() ? propagationData.ssn : "--");
+
+  // K-idx (środek)
+  tft.setTextColor(TFT_CYAN);
+  tft.setCursor(130, yPos);
+  tft.print("K-idx:");
+  tft.setTextColor(TFT_WHITE);
+  tft.print(propagationData.kindex.length() ? propagationData.kindex : "--");
+
+  // X-Ray w niebieskiej ramce z żółtym tekstem
+  tft.fillRect(280, yPos - 2, 100, 22, TFT_BLUE);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(290, yPos);
+  String xrayText = propagationData.xray.length() ? propagationData.xray : "--";
+  tft.print("X-Ray:" + xrayText);
+
+  // === ŚRODKOWA SEKCJA - TABELA PASMA (lewa strona) ===
+  yPos += lineHeight + 10;
+  int tableTop = yPos;
+
+  // Ramka wokół tabeli
+  tft.drawRoundRect(10, tableTop - 5, 260, 140, 5, TFT_DARKGREY);
+
+  // Nagłówki tabeli
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(15, yPos);
+  tft.print("HF BAND");
+  tft.setTextColor(TFT_CYAN);
+  tft.setCursor(105, yPos);
+  tft.print("DAY");
+  tft.setCursor(175, yPos);
+  tft.print("NIGHT");
+  tft.drawFastHLine(12, yPos + 16, 256, TFT_DARKGREY);
+
+  yPos += 22;
+
+  // Wiersze tabeli (4 pasma)
+  int rowHeight = 30;
   for (int i = 0; i < 4; i++) {
+    // Podświetlenie co drugi wiersz (w ramce)
     if (i % 2 == 0) {
-      tft.fillRect(0, yPos - 2, 480, 28, TFT_TABLE_ALT_ROW_COLOR);
+      tft.fillRect(12, yPos - 2, 256, rowHeight - 2, 0x1082); // Ciemnoszary
     }
 
     tft.setTextSize(2);
-    tft.setTextColor(TFT_LIGHTGREY);
-    tft.setCursor(5, yPos);
+
+    // BAND label
+    tft.setTextColor(TFT_WHITE);
+    tft.setCursor(15, yPos);
     tft.print(propagationData.hfBandLabel[i]);
 
-    //tft.setTextColor(TFT_DARKGREY);
-    //tft.setCursor(5, yPos + 9);
-    //tft.print(propagationData.hfBandFreq[i]);
+    // Day - kolor w zależności od warunku
+    String dayCond = propagationData.hfBandDay[i];
+    tft.setTextColor(conditionColor(dayCond));
+    tft.setCursor(105, yPos);
+    tft.print(dayCond.length() ? dayCond : "--");
 
-    tft.setTextSize(2);
-    tft.setTextColor(conditionColor(propagationData.hfBandDay[i]));
-    tft.setCursor(150, yPos - 2);
-    tft.print(propagationData.hfBandDay[i]);
+    // Night
+    String nightCond = propagationData.hfBandNight[i];
+    tft.setTextColor(conditionColor(nightCond));
+    tft.setCursor(175, yPos);
+    tft.print(nightCond.length() ? nightCond : "--");
 
-    tft.setTextColor(conditionColor(propagationData.hfBandNight[i]));
-    tft.setCursor(320, yPos - 2);
-    tft.print(propagationData.hfBandNight[i]);
-
-    yPos += 30;
+    yPos += rowHeight;
   }
 
-  tft.setTextSize(1);
-  tft.setTextColor(TFT_DARKGREY);
-  tft.setCursor(10, 190);
-  tft.print("UPDATED");
-  tft.setTextSize(2);
-  tft.setTextColor(TFT_LIGHTGREY);
-  tft.setCursor(10, 202);
-  tft.print(propagationData.updated.length() ? propagationData.updated : "--");
+  // === PRAWA STRONA - S/N, Aurora, Ikona ===
+  // Pozycja ikony (bardziej w lewo i niżej)
+  int iconX = 340;
+  int iconY = tableTop + 90;
+  int iconSize = 50; // Zakładamy rozmiar ikony 50x50
 
+  // S/N - wyśrodkowane nad ikoną
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_CYAN);
+  String snText = "S/N:";
+  String snVal = "S1-S2";
+  int snWidth = tft.textWidth(snText) + tft.textWidth(snVal);
+  int snX = iconX + (iconSize - snWidth) / 2;
+  tft.setCursor(snX, iconY - 55);
+  tft.print(snText);
+  tft.setTextColor(TFT_WHITE);
+  tft.print(snVal);
+
+  // Aurora - wyśrodkowane nad ikoną
+  String auroraText = "Aurora:";
+  String auroraVal = "2";
+  int auroraWidth = tft.textWidth(auroraText) + tft.textWidth(auroraVal);
+  int auroraX = iconX + (iconSize - auroraWidth) / 2;
+  tft.setTextColor(TFT_CYAN);
+  tft.setCursor(auroraX, iconY - 35);
+  tft.print(auroraText);
+  tft.setTextColor(TFT_WHITE);
+  tft.print(auroraVal);
+
+  // === IKONA PROPAGACJI (słońce/chmura) ===
+  int kIndexVal = propagationData.kindex.toInt();
+  String propIcon;
+  if (kIndexVal < 3) {
+    propIcon = "/icon50/800.bmp"; // Słońce - dobre warunki
+  } else if (kIndexVal < 5) {
+    propIcon = "/icon50/801.bmp"; // Częściowe zachmurzenie - średnie
+  } else {
+    propIcon = "/icon50/200.bmp"; // Burza - słabe warunki
+  }
+  if (littleFsReady && LittleFS.exists(propIcon)) {
+    drawBmpFromFS(propIcon, iconX, iconY);
+  }
+
+  // === DOLNA SEKCJA - INFO O ZAMKNIĘTYCH PASMACH ===
+  yPos = tableTop + 145; // Pod tabelą
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_RED);
+  tft.setCursor(10, yPos);
+  tft.print("Very High Band Closed");
+  tft.setCursor(155, yPos);
+  tft.print("Es Europe Band Closed");
+
+  yPos += 14;
+  tft.setCursor(10, yPos);
+  tft.print("Es Asia Band Closed");
+  tft.setCursor(155, yPos);
+  tft.print("Es Afr Band Closed");
+
+  // === STATUS BŁĘDU ===
   if (!propagationData.valid) {
     tft.setTextSize(1);
     tft.setTextColor(TFT_RED);
-    tft.setCursor(10, 176);
+    tft.setCursor(10, bodyBottom - 20);
     String err = propagationData.lastError.length() ? propagationData.lastError : tr(TR_NO_DATA);
     tft.print(sanitizePolishToAscii(String(tr(TR_ERROR_PREFIX))));
     tft.print(err);
@@ -7433,18 +7449,17 @@ void updateScreen4Data() {
 void drawBandInfo() {
   tft.fillScreen(TFT_BLACK);
 
-  tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-
-  int menuX = 8;
-  int menuY = 10;
-  //tft.fillRect(menuX, menuY, 18, 3, TFT_BLACK);
-  //tft.fillRect(menuX, menuY + 6, 18, 3, TFT_BLACK);
-  //tft.fillRect(menuX, menuY + 12, 18, 3, TFT_BLACK);
-
+  // Nagłówek w kolorze żółtym/złotym na czarnym tle (jak na zdjęciu)
   tft.setTextSize(2);
-  tft.setCursor(35, 8);
-  tft.print("HF BAND INFO");
+  tft.setTextColor(TFT_GOLD);
+  tft.setCursor(120, 10);
+  tft.print("SOLAR PROPAGATION INDEX");
+
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
+
+  // Linia pod nagłówkiem
+  tft.drawLine(10, 35, 470, 35, TFT_DARKGREY);
 
   // ZEGAR - rysowany osobno przez updateBandInfoClock()
 
@@ -8495,6 +8510,9 @@ void drawWeather() {
   tft.setCursor(35, 8);
   tft.print(tr(TR_WEATHER));
 
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
+
   // ZEGAR - rysowany osobno przez updateWeatherClock()
 
   drawWeatherBody();
@@ -8513,6 +8531,9 @@ void drawWeatherForecast() {
   tft.setTextSize(2);
   tft.setCursor(35, 8);
   tft.print(detailHeader);
+
+  // Ikona WiFi w górnym prawym rogu
+  drawWifiSignalBars(445, 4);
 
   // ZEGAR - rysowany osobno przez updateWeatherForecastClock()
 
@@ -8676,10 +8697,13 @@ void drawMatrixFrame() {
   const int timeWidth = 8 * timeCharW;
   const int timeHeight = timeCharH;
   const int timeX = (SCREEN10_WIDTH - timeWidth) / 2;
-  const int timeY = (SCREEN10_HEIGHT - timeHeight) / 2 - 40; // Wyżej na środku
+  const int timeY = (SCREEN10_HEIGHT - timeHeight) / 2; // Wyśrodkowany
   
   // Rysuj zegar tylko gdy się zmienił
   if (timeLocal != lastClockText) {
+    // Wyczyść obszar zegara przed narysowaniem nowego (usuń poprzednie sekundy)
+    tft.fillRect(timeX - 5, timeY - 5, timeWidth + 10, timeHeight + 10, TFT_BLACK);
+    
     // Efekt świecący - rysuj z cieniem
     tft.setTextSize(MATRIX_TEXT_SIZE);
     
@@ -13005,12 +13029,12 @@ void sendAPRSLogin() {
     return;
   }
   
-  // Format loginu: user Callsign pass 23123 vers ESP32-HAM-CLOCK 1.2
+  // Format loginu: user Callsign pass 23123 vers ESP32-HAM-CLOCK 1.3
   String login = "user ";
   login += getAprsTxCallsignWithSsid();
   login += " pass ";
   login += String(aprsPasscode);
-  login += " vers ESP32-HAM-CLOCK 1.2";
+  login += " vers ESP32-HAM-CLOCK 1.3";
   
   Serial.print("[APRS] Wysyłanie loginu: ");
   Serial.println(login);
@@ -15094,6 +15118,171 @@ void handleScreenSaverMenuTouch(uint16_t x, uint16_t y) {
   }
 }
 
+// ========== UŚPIENIE EKRANU ==========
+
+void drawScreenSleepMenu() {
+  tft.fillScreen(TFT_BLACK);
+
+  // Nagłówek
+  tft.fillRect(0, 0, 480, 28, menuThemeColor);
+  tft.setTextColor(TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(10, 6);
+  tft.print("USPIENIE EKRANU");
+
+  // Stan: Włączony/Wyłączony
+  const int tileW = 100;
+  const int tileH = 40;
+  const int gap = 10;
+  const int startX = (480 - (2 * tileW + gap)) / 2;
+  const int tileY = 60;
+
+  tft.setTextColor(TFT_LIGHTGREY);
+  tft.setTextSize(1);
+  tft.setCursor(10, 50);
+  tft.print("Stan:");
+
+  drawFilterTile(startX, tileY, tileW, tileH, "WLACZ", screenSleepEnabled);
+  drawFilterTile(startX + tileW + gap, tileY, tileW, tileH, "WYLACZ", !screenSleepEnabled);
+
+  // Ustawienie czasu w minutach
+  tft.setTextColor(TFT_LIGHTGREY);
+  tft.setTextSize(1);
+  tft.setCursor(10, 120);
+  tft.print("Czas uspienia:");
+
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(3);
+  tft.setCursor(220, 115);
+  tft.print(screenSleepMenuTimeoutMin);
+  tft.print(" min");
+
+  // Przyciski +/- 1 minuta
+  const int minTileW = 60;
+  const int minTileH = 35;
+  const int minGap = 8;
+  const int minStartX = 10;
+  const int minY = 160;
+
+  drawFilterTile(minStartX, minY, minTileW, minTileH, "-1", false);
+  drawFilterTile(minStartX + minTileW + minGap, minY, minTileW, minTileH, "+1", false);
+
+  // Przycisk ZAPISZ
+  const int saveW = 90;
+  const int saveH = 26;
+  const int saveX = 10;
+  const int saveY = 240;
+  drawFilterTile(saveX, saveY, saveW, saveH, "ZAPISZ", false);
+
+  // Przycisk ANULUJ
+  const int cancelX = saveX + saveW + 10;
+  drawFilterTile(cancelX, saveY, saveW, saveH, "ANULUJ", false);
+}
+
+void handleScreenSleepMenuTouch(uint16_t x, uint16_t y) {
+  const int tileW = 100;
+  const int tileH = 40;
+  const int gap = 10;
+  const int startX = (480 - (2 * tileW + gap)) / 2;
+  const int tileY = 60;
+
+  // Włącz
+  if (isPointInRect(x, y, startX, tileY, tileW, tileH)) {
+    screenSleepEnabled = true;
+    drawScreenSleepMenu();
+    return;
+  }
+  // Wyłącz
+  if (isPointInRect(x, y, startX + tileW + gap, tileY, tileW, tileH)) {
+    screenSleepEnabled = false;
+    drawScreenSleepMenu();
+    return;
+  }
+
+  // +/- minuty
+  const int minTileW = 60;
+  const int minTileH = 35;
+  const int minGap = 8;
+  const int minStartX = 10;
+  const int minY = 160;
+
+  // Minus 1 min
+  if (isPointInRect(x, y, minStartX, minY, minTileW, minTileH)) {
+    if (screenSleepMenuTimeoutMin > 1) {
+      screenSleepMenuTimeoutMin--;
+    }
+    drawScreenSleepMenu();
+    return;
+  }
+  // Plus 1 min
+  if (isPointInRect(x, y, minStartX + minTileW + minGap, minY, minTileW, minTileH)) {
+    screenSleepMenuTimeoutMin++;
+    drawScreenSleepMenu();
+    return;
+  }
+
+  // Przycisk ZAPISZ
+  const int saveW = 90;
+  const int saveH = 26;
+  const int saveX = 10;
+  const int saveY = 240;
+  if (isPointInRect(x, y, saveX, saveY, saveW, saveH)) {
+    screenSleepTimeoutMin = screenSleepMenuTimeoutMin;
+    screenSleepEnabled = true;
+    screenSleepLastActivityMs = millis();
+    preferences->putInt("sleep_timeout", screenSleepTimeoutMin);
+    preferences->putBool("sleep_en", screenSleepEnabled);
+    screenSleepMenuActive = false;
+    inMenu = false;
+    drawScreen(currentScreen);
+    return;
+  }
+
+  // Przycisk ANULUJ
+  const int cancelX = saveX + saveW + 10;
+  if (isPointInRect(x, y, cancelX, saveY, saveW, saveH)) {
+    screenSleepMenuActive = false;
+    inMenu = false;
+    drawScreen(currentScreen);
+    return;
+  }
+}
+
+void enterScreenSleep() {
+  if (!screenSleepEnabled || screenSleepActive) return;
+
+  screenSleepActive = true;
+  screenSleepPrevScreen = currentScreen;
+
+  // Wyłącz podświetlenie
+  ledcWrite(TFT_BL_PIN, 0);
+
+  // Wyczyść ekran
+  tft.fillScreen(TFT_BLACK);
+}
+
+void wakeUpFromSleep() {
+  if (!screenSleepActive) return;
+
+  screenSleepActive = false;
+  screenSleepLastActivityMs = millis();
+
+  // Przywróć podświetlenie
+  setBacklightPercent(backlightPercent);
+
+  // Przywróć poprzedni ekran
+  drawScreen(screenSleepPrevScreen);
+}
+
+void checkScreenSleepTimeout() {
+  if (!screenSleepEnabled || screenSleepActive) return;
+
+  unsigned long timeoutMs = (unsigned long)screenSleepTimeoutMin * 60 * 1000;
+  if (millis() - screenSleepLastActivityMs > timeoutMs) {
+    enterScreenSleep();
+  }
+}
+
 // ========== PREFERENCES ==========
 
 void loadPreferences() {
@@ -15161,6 +15350,12 @@ void loadPreferences() {
   yield();
   userLatLonValid = preferences->getBool("user_ll_ok", false);
   yield();
+  
+  // Jeśli nie mamy ważnych współrzędnych ale mamy locator, przelicz z locatora
+  if (!userLatLonValid && userLocator.length() >= 4) {
+    updateUserLatLonFromLocator();
+    // Nie zapisujemy do preferencji tutaj - to tylko odczyt
+  }
   qrzUsername = preferences->getString("qrz_user", "");
   yield();
   qrzPassword = preferences->getString("qrz_pass", "");
@@ -15189,10 +15384,10 @@ void loadPreferences() {
   touchSwapXY = preferences->getBool("touch_swap", TOUCH_SWAP_XY);
   touchInvertX = preferences->getBool("touch_invx", TOUCH_INVERT_X);
   touchInvertY = preferences->getBool("touch_invy", TOUCH_INVERT_Y);
-  touchRotation = preferences->getUChar("touch_rot", 1);
-  if (touchRotation > 3) touchRotation = 1;
   tftRotation = preferences->getUChar("tft_rot", 1);
   if (tftRotation > 3) tftRotation = 1;
+  touchRotation = preferences->getUChar("touch_rot", 1);
+  if (touchRotation > 3) touchRotation = 1;
   if (touchXMin < 0 || touchXMax > 4095 || touchXMin >= touchXMax) {
     touchXMin = TOUCH_X_MIN;
     touchXMax = TOUCH_X_MAX;
@@ -15221,6 +15416,13 @@ void loadPreferences() {
   pskAutoRefreshMinutes = preferences->getInt("psk_autorefresh", 5);
   if (pskAutoRefreshMinutes < 0) pskAutoRefreshMinutes = 0;
   if (pskAutoRefreshMinutes > 60) pskAutoRefreshMinutes = 60;
+
+  // MQTT PSK Reporter settings
+  pskMqttEnabled = preferences->getBool("psk_mqtt_en", false);
+  pskMqttServer = preferences->getString("psk_mqtt_srv", "mqtt.pskreporter.info");
+  pskMqttPort = preferences->getInt("psk_mqtt_port", 1883);
+  if (pskMqttPort <= 0 || pskMqttPort > 65535) pskMqttPort = 1883;
+  pskMqttCallsign = preferences->getString("psk_mqtt_call", "");
 
   screen1TimeMode = (uint8_t)preferences->getInt("screen1_time", SCREEN1_TIME_UTC);
   if (screen1TimeMode > SCREEN1_TIME_LOCAL) screen1TimeMode = SCREEN1_TIME_UTC;
@@ -15364,6 +15566,12 @@ void savePreferences() {
   preferences->putInt("psk_report_days", pskReportDays);
   preferences->putInt("psk_autorefresh", pskAutoRefreshMinutes);
 
+  // MQTT PSK Reporter settings
+  preferences->putBool("psk_mqtt_en", pskMqttEnabled);
+  preferences->putString("psk_mqtt_srv", pskMqttServer);
+  preferences->putInt("psk_mqtt_port", pskMqttPort);
+  preferences->putString("psk_mqtt_call", pskMqttCallsign);
+
   // Konfiguracja wygaszacza ekranu (Matrix)
   preferences->putBool("ss_enabled", screenSaverEnabled);
   preferences->putInt("ss_timeout", screenSaverTimeoutMin);
@@ -15439,7 +15647,7 @@ String formatUptime(unsigned long ms) {
 
 String getManualPL() {
   return String(
-    "ESP32-HAM-CLOCK v1.2 (04.03.2026)\n"
+    "ESP32-HAM-CLOCK v1.3 (13.04.2026)\n"
     "Autor: Konrad Wisniewski SP3KON (z użyciem AI)\n"
     "Kontakt: sp3kon@gmail.com\n\n"
     "Wgrywanie przez przeglądarkę (ESP Web Tools)\n"
@@ -15473,7 +15681,7 @@ void setupWebServer() {
     server = new WebServer(80);
   }
   
-  // Strona główna - używa pliku z LittleFS jeśli istnieje
+  // Strona główna - najpierw próbuje z LittleFS, potem wbudowany HTML
   server->on("/", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
@@ -15484,7 +15692,7 @@ void setupWebServer() {
     }
   });
 
-  // Strona główna (alias /index.html)
+  // Strona główna (alias /index.html) - najpierw LittleFS, potem wbudowany HTML
   server->on("/index.html", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
@@ -15672,7 +15880,7 @@ void setupWebServer() {
     // Stopka
     html += "<hr style='margin:40px 0;'>";
     html += "<p style='text-align:center;color:#666;'>";
-    html += "<strong>ESP32-HAM-CLOCK</strong> | Wersja 1.2b | Autor: SP3KON<br>";
+    html += "<strong>ESP32-HAM-CLOCK</strong> | Wersja 1.3 | Autor: SP3KON<br>";
     html += "Modyfikacje: SP9TNV | Licencja: MIT<br>";
     html += "<a href='mailto:sp3kon@gmail.com'>sp3kon@gmail.com</a>";
     html += "</p>";
@@ -15683,15 +15891,9 @@ void setupWebServer() {
     server->send(200, "text/html; charset=utf-8", html);
   });
 
-  // Strona konfiguracji
+  // Strona konfiguracji - zawsze używa wbudowanego HTML z poprawnymi nazwami ekranów
   server->on("/config", HTTP_GET, []() {
-    if (littleFsReady && LittleFS.exists("/index.html")) {
-      File f = LittleFS.open("/index.html", "r");
-      server->streamFile(f, "text/html; charset=utf-8");
-      f.close();
-    } else {
-      server->send(200, "text/html; charset=utf-8", getConfigHTML());
-    }
+    server->send(200, "text/html; charset=utf-8", getConfigHTML());
   });
   
   // API - pobierz wszystkie spoty (maksymalnie 50)
@@ -16221,8 +16423,25 @@ void setupWebServer() {
         if (pskAutoRefreshMinutes < 0) pskAutoRefreshMinutes = 0;
         if (pskAutoRefreshMinutes > 60) pskAutoRefreshMinutes = 60;
       }
+      // MQTT PSK Reporter settings
+      if (doc["psk_mqtt_enabled"].is<bool>()) {
+        pskMqttEnabled = doc["psk_mqtt_enabled"].as<bool>();
+      }
+      if (doc["psk_mqtt_server"].is<String>()) {
+        pskMqttServer = doc["psk_mqtt_server"].as<String>();
+        pskMqttServer.trim();
+      }
+      if (doc["psk_mqtt_port"].is<int>()) {
+        pskMqttPort = doc["psk_mqtt_port"].as<int>();
+        if (pskMqttPort <= 0 || pskMqttPort > 65535) pskMqttPort = 1883;
+      }
+      if (doc["psk_mqtt_callsign"].is<String>()) {
+        pskMqttCallsign = doc["psk_mqtt_callsign"].as<String>();
+        pskMqttCallsign.trim();
+        pskMqttCallsign.toUpperCase();
+      }
 
-      // Sanitizacja (najczĂ„â„˘stsza przyczyna: spacje na koÄąâ€žcu SSID/hasÄąâ€ša)
+      // Sanitizacja (najczÄ™stsza przyczyna: spacje na koÄ…cu SSID/hasÄ…a)
       wifiSSID.trim();
       wifiPassword.trim();
       wifiSSID2.trim();
@@ -16400,6 +16619,74 @@ void setupWebServer() {
     server->send(200, "application/json", "{\"status\":\"ok\",\"action\":\"restart\"}");
     requestRestart(1500);
   });
+
+  // API - usuń plik z LittleFS
+  server->on("/api/delete_file", HTTP_GET, []() {
+    if (!server->hasArg("path")) {
+      server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"missing_path\"}");
+      return;
+    }
+    String path = server->arg("path");
+    if (!path.startsWith("/")) {
+      path = "/" + path;
+    }
+    if (!littleFsReady) {
+      server->send(500, "application/json", "{\"status\":\"error\",\"message\":\"littlefs_not_ready\"}");
+      return;
+    }
+    if (!LittleFS.exists(path)) {
+      server->send(404, "application/json", "{\"status\":\"error\",\"message\":\"file_not_found\"}");
+      return;
+    }
+    if (LittleFS.remove(path)) {
+      server->send(200, "application/json", "{\"status\":\"ok\",\"message\":\"file_deleted\"}");
+      Serial.println("File deleted: " + path);
+    } else {
+      server->send(500, "application/json", "{\"status\":\"error\",\"message\":\"delete_failed\"}");
+    }
+  });
+
+  // API - upload pliku do LittleFS
+  server->on("/upload_form", HTTP_GET, []() {
+    server->send(200, "text/html", "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Upload</title><style>body{font-family:Arial;background:#1a1a1a;color:#e0e0e0;padding:20px;}button{padding:12px 30px;background:#4a6a4a;border:none;color:#e0e0e0;cursor:pointer;border-radius:5px;font-size:16px;}</style></head><body><h2>Upload index.html</h2><form id='f'><input type='file' id='file' accept='.html'><br><br><button type='submit'>Wgraj</button></form><div id='s'></div><script>document.getElementById('f').addEventListener('submit',function(e){e.preventDefault();const file=document.getElementById('file').files[0];if(!file){alert('Wybierz plik');return;}const fd=new FormData();fd.append('index.html',file);fetch('/api/upload',{method:'POST',body:fd}).then(()=>{document.getElementById('s').innerHTML='<p style=\"color:green\">OK! Odswiez strone glowna (Ctrl+F5)</p>';}).catch(err=>{document.getElementById('s').innerHTML='<p style=\"color:red\">Blad: '+err+'</p>';});});</script></body></html>");
+  });
+  server->on("/api/upload", HTTP_POST, []() {
+    server->send(200, "application/json", "{\"status\":\"ok\",\"message\":\"upload_done\"}");
+  }, []() {
+    HTTPUpload& upload = server->upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      String filename = upload.filename;
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      if (!littleFsReady) {
+        Serial.println("LittleFS not ready for upload");
+        return;
+      }
+      Serial.printf("Uploading: %s\n", filename.c_str());
+      if (LittleFS.exists(filename)) {
+        LittleFS.remove(filename);
+      }
+      File f = LittleFS.open(filename, "w");
+      if (!f) {
+        Serial.println("Failed to open file for writing");
+        return;
+      }
+      f.close();
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      String filename = upload.filename;
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      File f = LittleFS.open(filename, "a");
+      if (f) {
+        f.write(upload.buf, upload.currentSize);
+        f.close();
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      Serial.printf("Upload finished: %s, size: %d\n", upload.filename.c_str(), upload.totalSize);
+    }
+  });
   
   // API - pobierz konfigurację
   server->on("/api/config", HTTP_GET, []() {
@@ -16532,6 +16819,11 @@ void setupWebServer() {
     doc["psk_monitor_callsign"] = pskMonitorCallsign;
     doc["psk_report_days"] = pskReportDays;
     doc["psk_auto_refresh"] = pskAutoRefreshMinutes;
+    // MQTT PSK Reporter
+    doc["psk_mqtt_enabled"] = pskMqttEnabled;
+    doc["psk_mqtt_server"] = pskMqttServer;
+    doc["psk_mqtt_port"] = pskMqttPort;
+    doc["psk_mqtt_callsign"] = pskMqttCallsign;
 
     JsonArray orderArr = doc.createNestedArray("screen_order");
     for (int i = 0; i < SCREEN_ORDER_COUNT; i++) {
@@ -16542,6 +16834,58 @@ void setupWebServer() {
     String json;
     serializeJson(doc, json);
     server->send(200, "application/json", json);
+  });
+  
+  // Upload nowej mapy BMP (np. przez curl -X POST -F "file=@Mapa swiata.bmp" http://esp-ip/upload/bmp)
+  server->on("/upload/bmp", HTTP_POST, []() {
+    server->send(200, "text/plain", "Upload complete");
+  }, []() {
+    HTTPUpload& upload = server->upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      String filename = upload.filename;
+      if (!filename.endsWith(".bmp") && !filename.endsWith(".BMP")) {
+        Serial.println("[UPLOAD] Invalid file type, must be .bmp");
+        return;
+      }
+      if (littleFsReady) {
+        LittleFS.remove(PSK_MAP_BMP_PATH); // Usuń starą mapę
+        File f = LittleFS.open(PSK_MAP_BMP_PATH, "w");
+        if (!f) {
+          Serial.println("[UPLOAD] Failed to open file for writing");
+          return;
+        }
+        f.close();
+        Serial.printf("[UPLOAD] Starting upload: %s\n", filename.c_str());
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (littleFsReady) {
+        File f = LittleFS.open(PSK_MAP_BMP_PATH, "a");
+        if (f) {
+          f.write(upload.buf, upload.currentSize);
+          f.close();
+        }
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      Serial.printf("[UPLOAD] Done: %d bytes\n", upload.totalSize);
+      // Odśwież mapę jeśli jesteśmy na ekranie PSK
+      if (currentScreen == SCREEN_PSK_MAP) {
+        drawPskMap();
+      }
+    }
+  });
+  
+  // Prosty formularz do uploadu mapy
+  server->on("/upload", HTTP_GET, []() {
+    String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>";
+    html += "<h1>Wgraj nową mapę BMP</h1>";
+    html += "<form method='POST' action='/upload/bmp' enctype='multipart/form-data'>";
+    html += "<input type='file' name='file' accept='.bmp'><br><br>";
+    html += "<input type='submit' value='Wgraj mapę'>";
+    html += "</form>";
+    html += "<p>Rozmiar: 480x320 px</p>";
+    html += "<p><a href='/'>← Powrót</a></p>";
+    html += "</body></html>";
+    server->send(200, "text/html; charset=utf-8", html);
   });
   
   server->begin();
@@ -16784,7 +17128,7 @@ String getMainHTML() {
         </div>
         <div class="card">
           <div class="label">Wersja</div>
-          <div class="value">1.2b</div>
+          <div class="value">1.3</div>
         </div>
         <div class="card">
           <div class="label">Licencja</div>
@@ -16920,6 +17264,39 @@ String getMainHTML() {
         <label class="check"><input id="aprs_alert_wx_enabled" type="checkbox"> Alerty WX</label>
       </div>
 
+      <div class="sectionTitle">PSKReporter</div>
+      <div class="row">
+        <div class="field">
+          <label for="psk_autorefresh">Auto odswiezanie (min)</label>
+          <input id="psk_autorefresh" type="number" min="0" max="60">
+        </div>
+        <div class="field">
+          <label for="psk_callsign">Callsign (nadajnik)</label>
+          <input id="psk_callsign" type="text" placeholder="np. SP9ABC">
+        </div>
+        <div class="field">
+          <label for="psk_maxage">Max wiek spotow (min)</label>
+          <input id="psk_maxage" type="number" min="5" max="120" value="60">
+        </div>
+      </div>
+      <div class="row">
+        <label class="check"><input id="psk_mqtt_enabled" type="checkbox"> Uzyj MQTT zamiast HTTP</label>
+      </div>
+      <div class="row" id="mqtt_fields" style="display:none;">
+        <div class="field">
+          <label for="psk_mqtt_server">MQTT Serwer</label>
+          <input id="psk_mqtt_server" type="text" placeholder="mqtt.pskreporter.info">
+        </div>
+        <div class="field">
+          <label for="psk_mqtt_port">MQTT Port</label>
+          <input id="psk_mqtt_port" type="number" min="1" max="65535" value="1883">
+        </div>
+        <div class="field">
+          <label for="psk_mqtt_callsign">MQTT Callsign (filter)</label>
+          <input id="psk_mqtt_callsign" type="text" placeholder="np. SP9ABC">
+        </div>
+      </div>
+
       <div class="sectionTitle">Ekran i filtry</div>
       <div class="row">
         <div class="field">
@@ -16955,6 +17332,27 @@ String getMainHTML() {
         <label class="check"><input id="cluster_nowcy" type="checkbox"> Ukryj WCY</label>
       </div>
 
+      <div class="sectionTitle">Kolejność ekranów TFT (12 pozycji)</div>
+      <div class="hint">Wybierz ekran dla każdej pozycji. 'Wyłączony' oznacza pustą pozycję.</div>
+      <div class="row">
+        <div class="field"><label for="screen_0">Pozycja 1</label><select id="screen_0"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_1">Pozycja 2</label><select id="screen_1"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_2">Pozycja 3</label><select id="screen_2"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_3">Pozycja 4</label><select id="screen_3"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_4">Pozycja 5</label><select id="screen_4"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_5">Pozycja 6</label><select id="screen_5"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_6">Pozycja 7</label><select id="screen_6"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_7">Pozycja 8</label><select id="screen_7"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_8">Pozycja 9</label><select id="screen_8"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_9">Pozycja 10</label><select id="screen_9"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_10">Pozycja 11</label><select id="screen_10"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+        <div class="field"><label for="screen_11">Pozycja 12</label><select id="screen_11"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
+      </div>
+
+      <div class="toolbar">
+        <button onclick="saveGraphicConfig()" style="background:#28a745;">Zapisz konfigurację</button>
+      </div>
+
       <details>
         <summary>Zaawansowany JSON</summary>
         <div class="hint">Mozesz nadal edytowac pelny JSON recznie, jesli chcesz zmienic pola nieobecne w formularzu.</div>
@@ -16968,6 +17366,28 @@ String getMainHTML() {
 
   <script>
     let currentConfig = {};
+
+    // Mapowanie kodów ekranów na przyjazne nazwy
+    const screenLabels = {
+      'propagacja': 'Propagacja',
+      'solarindex': 'Solar Index',
+      'hamclock': 'Ham Clock',
+      'dxcluster': 'DX Cluster',
+      'aprsis': 'APRS-IS',
+      'aprsradar': 'APRS Radar',
+      'weather': 'Pogoda',
+      'weatherforecast': 'Prognoza',
+      'pota': 'POTA',
+      'hamalert': 'HamAlert',
+      'pskmap': 'PSK Map',
+      'matrix': 'Matrix',
+      'unlishunter': 'Unlis Hunter',
+      'off': 'Wyłączony'
+    };
+
+    function getScreenLabel(code) {
+      return screenLabels[code] || code;
+    }
 
     function byId(id) {
       return document.getElementById(id);
@@ -17012,6 +17432,16 @@ String getMainHTML() {
       setValue('aprs_radius', cfg.aprs_radius);
       setValue('aprs_symbol', cfg.aprs_symbol);
       setValue('aprs_comment', cfg.aprs_comment);
+      setValue('psk_autorefresh', cfg.psk_autorefresh);
+      setValue('psk_callsign', cfg.psk_callsign);
+      setValue('psk_maxage', cfg.psk_maxage);
+      // MQTT PSK Reporter
+      setChecked('psk_mqtt_enabled', cfg.psk_mqtt_enabled);
+      setValue('psk_mqtt_server', cfg.psk_mqtt_server);
+      setValue('psk_mqtt_port', cfg.psk_mqtt_port);
+      setValue('psk_mqtt_callsign', cfg.psk_mqtt_callsign);
+      // Pokaz/ukryj pola MQTT
+      byId('mqtt_fields').style.display = cfg.psk_mqtt_enabled ? 'flex' : 'none';
       setValue('tft_backlight', cfg.tft_backlight);
       setValue('tft_rotation', cfg.tft_rotation);
       setValue('tft_lang', cfg.tft_lang);
@@ -17025,6 +17455,13 @@ String getMainHTML() {
       setChecked('cluster_noann', cfg.cluster_noann);
       setChecked('cluster_nowwv', cfg.cluster_nowwv);
       setChecked('cluster_nowcy', cfg.cluster_nowcy);
+      // Ładowanie kolejności ekranów
+      if (Array.isArray(cfg.screen_order)) {
+        cfg.screen_order.forEach((code, index) => {
+          const select = byId('screen_' + index);
+          if (select) select.value = code || 'off';
+        });
+      }
     }
 
     function buildConfigFromForm() {
@@ -17050,6 +17487,14 @@ String getMainHTML() {
         aprs_radius: getInt('aprs_radius', currentConfig.aprs_radius ?? 50),
         aprs_symbol: getString('aprs_symbol', '/-'),
         aprs_comment: getString('aprs_comment'),
+        psk_autorefresh: getInt('psk_autorefresh', currentConfig.psk_autorefresh ?? 10),
+        psk_callsign: getString('psk_callsign'),
+        psk_maxage: getInt('psk_maxage', currentConfig.psk_maxage ?? 60),
+        // MQTT PSK Reporter
+        psk_mqtt_enabled: byId('psk_mqtt_enabled').checked,
+        psk_mqtt_server: getString('psk_mqtt_server'),
+        psk_mqtt_port: getInt('psk_mqtt_port', currentConfig.psk_mqtt_port ?? 1883),
+        psk_mqtt_callsign: getString('psk_mqtt_callsign'),
         aprs_beacon: byId('aprs_beacon').checked,
         aprs_alert_enabled: byId('aprs_alert_enabled').checked,
         aprs_alert_nearby_enabled: byId('aprs_alert_nearby_enabled').checked,
@@ -17062,7 +17507,11 @@ String getMainHTML() {
         cluster_usefilters: byId('cluster_usefilters').checked,
         cluster_noann: byId('cluster_noann').checked,
         cluster_nowwv: byId('cluster_nowwv').checked,
-        cluster_nowcy: byId('cluster_nowcy').checked
+        cluster_nowcy: byId('cluster_nowcy').checked,
+        screen_order: Array.from({length: 12}, (_, i) => {
+          const select = byId('screen_' + i);
+          return select ? select.value : 'off';
+        })
       };
     }
 
@@ -17075,8 +17524,27 @@ String getMainHTML() {
       document.getElementById('aprs').textContent = (cfg.aprs_host || '-') + ':' + (cfg.aprs_port || '-');
       document.getElementById('filter').textContent = cfg.cluster_filters || '(brak)';
       fillGraphicForm(cfg);
+      renderScreenOrder(cfg.screen_order || []);
       document.getElementById('configEditor').value = JSON.stringify(cfg, null, 2);
       document.getElementById('saveState').textContent = 'Konfiguracja zaladowana. Mozesz ja edytowac i zapisac.';
+    }
+
+    function renderScreenOrder(screenOrder) {
+      const container = document.getElementById('screenOrder');
+      if (!container) return;
+      container.innerHTML = '';
+      if (!Array.isArray(screenOrder) || screenOrder.length === 0) {
+        container.innerHTML = '<div class="hint">Brak skonfigurowanych ekranów</div>';
+        return;
+      }
+      screenOrder.forEach((code, index) => {
+        if (code === 'off') return;
+        const label = getScreenLabel(code);
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = '<div class="label">Ekran ' + (index + 1) + '</div><div class="value">' + label + '</div>';
+        container.appendChild(div);
+      });
     }
 
     function formatTimeToLocal(timeStr) {
@@ -17174,6 +17642,11 @@ String getMainHTML() {
       byId('configEditor').value = JSON.stringify(buildConfigFromForm(), null, 2);
       await saveConfig();
     }
+
+    // Event listener dla MQTT checkbox - pokaz/ukryj pola MQTT
+    byId('psk_mqtt_enabled').addEventListener('change', function() {
+      byId('mqtt_fields').style.display = this.checked ? 'flex' : 'none';
+    });
 
     loadAll();
   </script>
@@ -17380,6 +17853,11 @@ void uiTaskLoop(void *parameter) {
       if (tftInitialized && currentScreen == SCREEN_UNLIS_HUNTER && !inMenu && !aprsAlertScreenActive) {
         updateUnlisHunter();
       }
+      
+      // Obsługa MQTT dla PSK Reporter (gdy aktywny ekran PSK i włączony MQTT)
+      if (pskMqttEnabled && currentScreen == SCREEN_PSK_MAP && !pskMapMenuOpen) {
+        loopPskMqtt();
+      }
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -17389,11 +17867,16 @@ void uiTaskLoop(void *parameter) {
 
 // ========== FUNKCJE PSK REPORTER MAP ==========
 
-// Konwersja współrzędnych geograficznych na piksele ekranu
+// Konwersja współrzędnych geograficznych na piksele ekranu - PROJEKCJA PLATE CARRÉE
 static void latLonToScreen(float lat, float lon, int &x, int &y) {
-  // Mapa: MAP_LAT_MIN do MAP_LAT_MAX -> MAP_DISPLAY_Y do MAP_DISPLAY_Y + MAP_DISPLAY_H
+  // Prosta projekcja walcowa (Plate Carrée) - liniowe odwzorowanie
+  // X: liniowe odwzorowanie długości geograficznej (-180 do +180)
   x = MAP_DISPLAY_X + (int)((lon - MAP_LON_MIN) / (MAP_LON_MAX - MAP_LON_MIN) * MAP_DISPLAY_W);
-  y = MAP_DISPLAY_Y + (int)((MAP_LAT_MAX - lat) / (MAP_LAT_MAX - MAP_LAT_MIN) * MAP_DISPLAY_H);
+  
+  // Y: liniowe odwzorowanie szerokości geograficznej (+90 na górze, -90 na dole)
+  // Odwrócone: lat_max - lat daje Y=0 dla +90, Y=max dla -90
+  float yNormalized = (MAP_LAT_MAX - lat) / (MAP_LAT_MAX - MAP_LAT_MIN);
+  y = MAP_DISPLAY_Y + (int)(yNormalized * MAP_DISPLAY_H);
 }
 
 // Pobieranie danych z PSK Reporter
@@ -17532,25 +18015,35 @@ static uint16_t getPskBandColor(int band) {
   }
 }
 
-// Rysowanie nagłówka
+// Rysowanie nagłówka (przezroczysty - na mapie)
 static void drawPskMapHeader() {
-  tft.fillRect(0, 0, 480, 30, TFT_RADIO_ORANGE);
+  // Bez tła - tekst bezpośrednio na mapie
   tft.setTextSize(2);
+  // Czarna obwódka dla kontrastu
   tft.setTextColor(TFT_BLACK);
-  // Wyśrodkuj napis (szerokość ekranu 480, tekst ~170px, środek ~155)
-  tft.setCursor(155, 8);
-  tft.print("PSK Reporter Map");
+  tft.setCursor(12, 10);
+  tft.print("PSKReporter MAP");
+  tft.setCursor(11, 9);
+  tft.print("PSKReporter MAP");
+  tft.setCursor(13, 11);
+  tft.print("PSKReporter MAP");
+  // Główny tekst - biały
+  tft.setTextColor(TFT_WHITE);
+  tft.setCursor(12, 10);
+  tft.print("PSKReporter MAP");
+  
+  // Status auto-odświeżania
   tft.setTextSize(1);
-  tft.setCursor(350, 8);
-  tft.print("Spots: ");
-  tft.print(pskSpotCount);
-  time_t now;
-  time(&now);
-  struct tm *timeinfo = localtime(&now);
-  char timeBuffer[9];
-  sprintf(timeBuffer, "%02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-  tft.setCursor(440, 8);
-  tft.print(timeBuffer);
+  // Obwódka
+  tft.setTextColor(TFT_BLACK);
+  tft.setCursor(322, 12);
+  tft.print("AUTO:" + String(pskAutoRefreshMinutes > 0 ? String(pskAutoRefreshMinutes) + "min" : "OFF"));
+  tft.setCursor(321, 11);
+  tft.print("AUTO:" + String(pskAutoRefreshMinutes > 0 ? String(pskAutoRefreshMinutes) + "min" : "OFF"));
+  // Tekst
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(322, 12);
+  tft.print("AUTO:" + String(pskAutoRefreshMinutes > 0 ? String(pskAutoRefreshMinutes) + "min" : "OFF"));
 }
 
 // Rysowanie przycisku menu w lewym górnym rogu
@@ -17733,9 +18226,9 @@ static void drawPskModeSelector() {
 
 // Rysowanie menu ustawień PSK
 static void drawPskSettingsMenu() {
-  // Tło menu - półprzezroczyste ciemne
-  tft.fillRect(40, 40, 400, 200, 0x18E3); // Ciemny szary
-  tft.drawRect(40, 40, 400, 200, TFT_WHITE);
+  // Tło menu - półprzezroczyste ciemne (rozszerzone dla MQTT)
+  tft.fillRect(40, 40, 400, 230, 0x18E3); // Ciemny szary
+  tft.drawRect(40, 40, 400, 230, TFT_WHITE);
   
   // Tytuł
   tft.setTextSize(2);
@@ -17781,24 +18274,53 @@ static void drawPskSettingsMenu() {
   tft.setCursor(305, 120);
   tft.print(pskTempMaxSpots);
   
+  // MQTT Mode
+  tft.setTextColor(pskActiveField == PSK_FIELD_MQTT_MODE ? TFT_YELLOW : TFT_WHITE);
+  tft.setCursor(60, 150);
+  tft.print("Tryb:");
+  tft.fillRect(120, 145, 100, 20, pskActiveField == PSK_FIELD_MQTT_MODE ? TFT_DARKGREY : TFT_BLACK);
+  tft.setCursor(125, 150);
+  tft.print(pskTempMqttEnabled ? "MQTT" : "HTTP");
+  
+  // MQTT Server (tylko gdy MQTT)
+  if (pskTempMqttEnabled) {
+    tft.setTextColor(pskActiveField == PSK_FIELD_MQTT_SERVER ? TFT_YELLOW : TFT_WHITE);
+    tft.setCursor(250, 150);
+    tft.print("Serwer:");
+    tft.fillRect(300, 145, 120, 20, pskActiveField == PSK_FIELD_MQTT_SERVER ? TFT_DARKGREY : TFT_BLACK);
+    tft.setCursor(305, 150);
+    String srv = pskTempMqttServer.length() > 12 ? pskTempMqttServer.substring(0, 12) + "..." : pskTempMqttServer;
+    tft.print(srv.length() > 0 ? srv.c_str() : "default");
+  }
+  
+  // MQTT Callsign (tylko gdy MQTT)
+  if (pskTempMqttEnabled) {
+    tft.setTextColor(pskActiveField == PSK_FIELD_MQTT_CALL ? TFT_YELLOW : TFT_WHITE);
+    tft.setCursor(60, 180);
+    tft.print("MQTT Znak:");
+    tft.fillRect(140, 175, 100, 20, pskActiveField == PSK_FIELD_MQTT_CALL ? TFT_DARKGREY : TFT_BLACK);
+    tft.setCursor(145, 180);
+    tft.print(pskTempMqttCallsign.length() > 0 ? pskTempMqttCallsign.c_str() : "(wszystkie)");
+  }
+  
   // Przyciski
   // Zapisz
-  tft.fillRect(100, 180, 80, 30, TFT_GREEN);
-  tft.drawRect(100, 180, 80, 30, TFT_WHITE);
+  tft.fillRect(100, 210, 80, 30, TFT_GREEN);
+  tft.drawRect(100, 210, 80, 30, TFT_WHITE);
   tft.setTextColor(TFT_BLACK);
-  tft.setCursor(115, 190);
+  tft.setCursor(115, 220);
   tft.print("ZAPISZ");
   
   // Anuluj
-  tft.fillRect(300, 180, 80, 30, TFT_RED);
-  tft.drawRect(300, 180, 80, 30, TFT_WHITE);
+  tft.fillRect(300, 210, 80, 30, TFT_RED);
+  tft.drawRect(300, 210, 80, 30, TFT_WHITE);
   tft.setTextColor(TFT_WHITE);
-  tft.setCursor(310, 190);
+  tft.setCursor(310, 220);
   tft.print("ANULUJ");
   
   // Podpowiedź
   tft.setTextColor(TFT_CYAN);
-  tft.setCursor(60, 155);
+  tft.setCursor(60, 195);
   tft.print("Dotknij pola aby edytowac, ZAPISZ aby zastosowac");
   
   // Jeśli aktywna klawiatura - narysuj ją
@@ -17815,9 +18337,26 @@ static void drawPskSettingsMenu() {
   }
 }
 
+// Funkcja obliczająca dystans (km) - wzór Haversine
+static float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
+  float p = 0.017453292519943295; // Pi/180
+  float a = 0.5 - cos((lat2 - lat1) * p) / 2 +
+            cos(lat1 * p) * cos(lat2 * p) *
+            (1 - cos((lon2 - lon1) * p)) / 2;
+  return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
+}
+
+// Funkcja zwracająca kolor linii zależny od odległości DX
+static uint16_t getDxColor(float distance) {
+  if (distance < 500) return TFT_GREEN;      // Bardzo blisko
+  else if (distance < 2000) return TFT_YELLOW; // Europa / Średni dystans
+  else if (distance < 5000) return TFT_ORANGE; // Daleko
+  else return TFT_MAGENTA;                     // DX (Transatlantyki itp.)
+}
+
 // Rysowanie legendy
 static void drawPskMapLegend() {
-  int y = 290, x = 10, boxSize = 8, gap = 45;
+  int y = 300, x = 10, boxSize = 8, gap = 45;
   tft.setTextSize(1);
   const char* bands[] = {"80m", "40m", "20m", "15m", "10m", "6m"};
   uint16_t colors[] = {TFT_RED, TFT_ORANGE, TFT_GREEN, TFT_CYAN, TFT_BLUE, TFT_MAGENTA};
@@ -17853,23 +18392,61 @@ void drawPskMap() {
     tft.fillRect(380, 160, 60, 40, 0x2222);
   }
   unsigned long now = millis();
-  // Auto-odświeżanie PSKReporter (jeśli włączone)
-  if (pskAutoRefreshMinutes > 0) {
-    unsigned long refreshIntervalMs = (unsigned long)pskAutoRefreshMinutes * 60 * 1000;
-    if (now - lastPskFetchMs > refreshIntervalMs) {
-      fetchPskReporterData();
-      lastPskFetchMs = now;
+  
+  // Wybierz tryb pracy: MQTT lub HTTP
+  if (pskMqttEnabled) {
+    // Tryb MQTT - loop obsługuje wszystko w tle
+    loopPskMqtt();
+  } else {
+    // Tryb HTTP - auto-odświeżanie PSKReporter
+    if (pskAutoRefreshMinutes > 0) {
+      unsigned long refreshIntervalMs = (unsigned long)pskAutoRefreshMinutes * 60 * 1000;
+      if (now - lastPskFetchMs > refreshIntervalMs) {
+        fetchPskReporterData();
+        lastPskFetchMs = now;
+      }
     }
   }
+  // Rysowanie linii od pozycji użytkownika do stacji
+  Serial.printf("[PSK] drawPskMap START: userLat=%.4f, userLon=%.4f, valid=%d, locator='%s'\n",
+                userLat, userLon, userLatLonValid, userLocator.c_str());
+  int userX = 0, userY = 0;
+  bool userOnMap = false;
+  if (userLatLonValid && userLat >= MAP_LAT_MIN && userLat <= MAP_LAT_MAX &&
+      userLon >= MAP_LON_MIN && userLon <= MAP_LON_MAX) {
+    latLonToScreen(userLat, userLon, userX, userY);
+    userOnMap = true;
+    Serial.printf("[PSK] User on map: X=%d, Y=%d\n", userX, userY);
+  }
+
   for (int i = 0; i < pskSpotCount; i++) {
     if (pskSpots[i].lat >= MAP_LAT_MIN && pskSpots[i].lat <= MAP_LAT_MAX &&
         pskSpots[i].lon >= MAP_LON_MIN && pskSpots[i].lon <= MAP_LON_MAX) {
       int x, y;
       latLonToScreen(pskSpots[i].lat, pskSpots[i].lon, x, y);
       uint16_t color = getPskBandColor(pskSpots[i].band);
+      
+      // Rysuj linię od użytkownika do stacji jeśli oba są na mapie
+      // Kolor zależy od odległości DX
+      if (userOnMap) {
+        float dist = calculateDistance(userLat, userLon, pskSpots[i].lat, pskSpots[i].lon);
+        uint16_t lineColor = getDxColor(dist);
+        tft.drawLine(userX, userY, x, y, lineColor);
+      }
+      
       tft.fillCircle(x, y, 3, color);
       tft.drawCircle(x, y, 3, TFT_BLACK);
     }
+  }
+
+  // Rysuj czerwoną kropkę na pozycji użytkownika (na wierzchu)
+  if (userOnMap) {
+    Serial.printf("[PSK] Drawing RED DOT at X=%d, Y=%d\n", userX, userY);
+    tft.fillCircle(userX, userY, 3, TFT_RED);
+    tft.drawCircle(userX, userY, 4, TFT_WHITE);
+  } else {
+    Serial.printf("[PSK] NO DOT: valid=%d, lat=%.2f (%.1f to %.1f), lon=%.2f (%.1f to %.1f)\n", 
+                  userLatLonValid, userLat, MAP_LAT_MIN, MAP_LAT_MAX, userLon, MAP_LON_MIN, MAP_LON_MAX);
   }
   drawPskMapLegend();
   drawSwitchScreenFooter();
@@ -17895,9 +18472,17 @@ static void handlePskKeyboardTouch(uint16_t x, uint16_t y) {
       pskTempMaxSpots = pskKeyboardBuffer.toInt();
       if (pskTempMaxSpots < 10) pskTempMaxSpots = 10;
       if (pskTempMaxSpots > 200) pskTempMaxSpots = 200;
+    } else if (pskKeyboardTarget == 3) {
+      pskTempMqttServer = pskKeyboardBuffer;
+      if (pskTempMqttServer.length() == 0) {
+        pskTempMqttServer = "mqtt.pskreporter.info"; // default
+      }
+    } else if (pskKeyboardTarget == 4) {
+      pskTempMqttCallsign = pskKeyboardBuffer;
     }
     pskActiveField = PSK_FIELD_NONE;
     pskKeyboardBuffer = "";
+    pskKeyboardActive = false;  // Odblokuj nawigację
     drawPskSettingsMenu();
     return;
   }
@@ -17906,6 +18491,7 @@ static void handlePskKeyboardTouch(uint16_t x, uint16_t y) {
   if (x >= 410 && x < 460 && y >= 230 && y < 260) {
     pskActiveField = PSK_FIELD_NONE;
     pskKeyboardBuffer = "";
+    pskKeyboardActive = false;  // Odblokuj nawigację
     drawPskSettingsMenu();
     return;
   }
@@ -18089,30 +18675,35 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       return;
     }
     
-    // Sprawdź czy dotknięto przycisk ZAPISZ (100,180,80,30)
+    // Sprawdź czy dotknięto przycisk ZAPISZ (100,210,80,30)
     Serial.printf("[PSK] Checking ZAPISZ button at x=%d, y=%d, pskMapMenuOpen=%d\n", x, y, pskMapMenuOpen);
-    if (x >= 100 && x < 180 && y >= 180 && y < 210) {
+    if (x >= 100 && x < 180 && y >= 210 && y < 240) {
       Serial.println("[PSK] ZAPISZ button pressed!");
       // Zapisz ustawienia
       pskReceiverCallsign = pskTempReceiver;
       pskFilterBand = pskTempBand;
       pskFilterMode = pskTempMode;
       pskMaxSpots = pskTempMaxSpots;
-      Serial.printf("[PSK] Settings: receiver=%s, band=%s, mode=%s, max=%d\n", 
+      pskMqttEnabled = pskTempMqttEnabled;
+      pskMqttServer = pskTempMqttServer;
+      pskMqttCallsign = pskTempMqttCallsign;
+      Serial.printf("[PSK] Settings: receiver=%s, band=%s, mode=%s, max=%d, mqtt=%d\n", 
                     pskReceiverCallsign.c_str(), pskFilterBand.c_str(), 
-                    pskFilterMode.c_str(), pskMaxSpots);
+                    pskFilterMode.c_str(), pskMaxSpots, pskMqttEnabled);
       // Zapisz do NVS
       preferences->putString("psk_receiver", pskReceiverCallsign);
       preferences->putString("psk_band", pskFilterBand);
       preferences->putString("psk_mode", pskFilterMode);
       preferences->putInt("psk_maxspots", pskMaxSpots);
+      preferences->putBool("psk_mqtt_en", pskMqttEnabled);
+      preferences->putString("psk_mqtt_srv", pskMqttServer);
+      preferences->putString("psk_mqtt_call", pskMqttCallsign);
       pskMapMenuOpen = false;
       pskActiveField = PSK_FIELD_NONE;
       Serial.printf("[PSK] pskMapMenuOpen set to: %d\n", pskMapMenuOpen);
       Serial.println("[PSK] Closing menu and redrawing map...");
-      // Przeładuj dane z nowymi filtrami
+      // Zresetuj timer - dane pobiorą się automatycznie przy następnym odświeżeniu (nie blokuj UI)
       lastPskFetchMs = 0;
-      fetchPskReporterData();
       Serial.printf("[PSK] Before drawPskMap, pskMapMenuOpen=%d\n", pskMapMenuOpen);
       drawPskMap();
       Serial.printf("[PSK] After drawPskMap, pskMapMenuOpen=%d\n", pskMapMenuOpen);
@@ -18128,8 +18719,9 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       drawPskMap();  // Odśwież ponownie aby usunąć napis
       return;
     }
-    // Sprawdź czy dotknięto przycisk ANULUJ (300,180,80,30)
-    if (x >= 300 && x < 380 && y >= 180 && y < 210) {
+    // Sprawdź czy dotknięto przycisk ANULUJ (300,210,80,30)
+    if (x >= 300 && x < 380 && y >= 210 && y < 240) {
+      Serial.println("[PSK] ANULUJ button pressed!");
       pskMapMenuOpen = false;
       pskActiveField = PSK_FIELD_NONE;
       drawPskMap();
@@ -18140,6 +18732,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       pskKeyboardTarget = 1; // 1 = znak
       pskKeyboardBuffer = pskTempReceiver;
       pskActiveField = PSK_FIELD_KEYBOARD;
+      pskKeyboardActive = true;  // Blokuj nawigację
       drawPskSettingsMenu();
       return;
     }
@@ -18160,11 +18753,40 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       pskKeyboardTarget = 2; // 2 = max
       pskKeyboardBuffer = String(pskTempMaxSpots);
       pskActiveField = PSK_FIELD_KEYBOARD;
+      pskKeyboardActive = true;  // Blokuj nawigację
       drawPskSettingsMenu();
       return;
     }
+    // Sprawdź czy dotknięto pole TRYB MQTT (120,145,100,20)
+    if (x >= 120 && x < 220 && y >= 145 && y < 165) {
+      pskTempMqttEnabled = !pskTempMqttEnabled;
+      pskActiveField = PSK_FIELD_NONE;
+      drawPskSettingsMenu();
+      return;
+    }
+    
+    // Sprawdź czy dotknięto pole MQTT SERWER (300,145,120,20) - tylko gdy MQTT
+    if (pskTempMqttEnabled && x >= 300 && x < 420 && y >= 145 && y < 165) {
+      pskKeyboardTarget = 3; // 3 = mqtt server
+      pskKeyboardBuffer = pskTempMqttServer;
+      pskActiveField = PSK_FIELD_KEYBOARD;
+      pskKeyboardActive = true;
+      drawPskSettingsMenu();
+      return;
+    }
+    
+    // Sprawdź czy dotknięto pole MQTT ZNAK (140,175,100,20) - tylko gdy MQTT
+    if (pskTempMqttEnabled && x >= 140 && x < 240 && y >= 175 && y < 195) {
+      pskKeyboardTarget = 4; // 4 = mqtt callsign
+      pskKeyboardBuffer = pskTempMqttCallsign;
+      pskActiveField = PSK_FIELD_KEYBOARD;
+      pskKeyboardActive = true;
+      drawPskSettingsMenu();
+      return;
+    }
+    
     // Jeśli dotknięto poza polem menu, zamknij menu
-    if (!(x >= 40 && x < 440 && y >= 40 && y < 240)) {
+    if (!(x >= 40 && x < 440 && y >= 40 && y < 270)) {
       pskMapMenuOpen = false;
       pskActiveField = PSK_FIELD_NONE;
       drawPskMap();
@@ -18182,31 +18804,282 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
     pskTempBand = pskFilterBand;
     pskTempMode = pskFilterMode;
     pskTempMaxSpots = pskMaxSpots;
+    pskTempMqttEnabled = pskMqttEnabled;
+    pskTempMqttServer = pskMqttServer;
+    pskTempMqttCallsign = pskMqttCallsign;
     drawPskMap();
     return;
   }
   
+  // Najpierw sprawdź rogi ekranu (przełączanie ekranów) - MUSI być przed mapą!
+  const uint16_t cornerY = 280, cornerX = 80;  // Podniesione Y dla mapy 320px
+  if (y >= cornerY && x < cornerX) {
+    currentScreen = getNextScreenId(currentScreen);
+    drawScreen(currentScreen);
+    resetTftAutoSwitchTimer();
+    return;
+  } else if (y >= cornerY && x >= (480 - cornerX)) {
+    currentScreen = getPrevScreenId(currentScreen);
+    drawScreen(currentScreen);
+    resetTftAutoSwitchTimer();
+    return;
+  }
+  
+  // Dotknięcie mapy odświeża dane (ale tylko jeśli nie w rogach)
   if (x >= MAP_DISPLAY_X && x < MAP_DISPLAY_X + MAP_DISPLAY_W &&
       y >= MAP_DISPLAY_Y && y < MAP_DISPLAY_Y + MAP_DISPLAY_H) {
     lastPskFetchMs = 0;
     drawPskMap();
     return;
   }
-  const uint16_t cornerY = 240, cornerX = 80;
-  if (y >= cornerY && x < cornerX) {
-    currentScreen = getNextScreenId(currentScreen);
-    drawScreen(currentScreen);
-    resetTftAutoSwitchTimer();
-  } else if (y >= cornerY && x >= (480 - cornerX)) {
-    currentScreen = getPrevScreenId(currentScreen);
-    drawScreen(currentScreen);
-    resetTftAutoSwitchTimer();
+}
+
+// ========== MQTT PSK REPORTER IMPLEMENTATION ==========
+
+// Konfiguracja MQTT - konkretny topic zamiast szerokiego wildcard
+typedef struct {
+  String callsign;
+  float lat;
+  float lon;
+  uint8_t band;
+  String mode;
+  unsigned long receivedAt;
+} PskSpotMqtt;
+
+#define PSK_MQTT_SPOT_BUFFER_SIZE 30
+PskSpotMqtt pskMqttSpotBuffer[PSK_MQTT_SPOT_BUFFER_SIZE];
+int pskMqttSpotCount = 0;
+unsigned long lastPskMqttDrawMs = 0;
+const unsigned long PSK_MQTT_DRAW_INTERVAL_MS = 1500; // Rysuj co 1.5 sekundy
+bool pskMqttConnected = false;
+unsigned long lastPskMqttReconnectAttempt = 0;
+const unsigned long PSK_MQTT_RECONNECT_INTERVAL_MS = 5000; // Co 5 sekund próba reconnect
+
+// Generuje precyzyjny topic na podstawie lokatora użytkownika (tylko pierwsze 4 znaki = duży kwadrat ~100x200km)
+static String getPskMqttTopicForLocator(const String& locator) {
+  if (locator.length() >= 4) {
+    String loc4 = locator.substring(0, 4);
+    loc4.toUpperCase();
+    // Format: pskr/filter/v2/+/+/+/{loc4}/#
+    // To ogranicza spam do konkretnego dużego kwadratu lokatora
+    return "pskr/filter/v2/+/+/+/" + loc4 + "/#";
   }
+  // Fallback na szeroki topic tylko gdy brak lokatora
+  return "pskr/filter/v2/+/+/+/+/+";
+}
+
+// Callback dla MQTT - parsuje JSON i dodaje do bufora
+void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Ogranicz rozmiar payloadu dla bezpieczeństwa
+  if (length > 1024) {
+    Serial.println("[PSK MQTT] Payload too large, skipping");
+    return;
+  }
+
+  // Parsuj JSON
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+  if (error) {
+    return; // Ciche pominięcie błędów parsowania
+  }
+
+  // Pobierz pola z JSON
+  const char* sender = doc["sender"];
+  const char* receiver = doc["receiver"];
+  const char* receiverLocator = doc["receiverLocator"];
+  const char* senderLocator = doc["senderLocator"];
+  const char* mode = doc["mode"];
+  float frequency = doc["frequency"] | 0.0f;
+
+  if (!sender || !senderLocator) return;
+
+  // Konwersja lokatora na lat/lon
+  double lat = 0, lon = 0;
+  String locStr(senderLocator);
+  locatorToLatLon(locStr, lat, lon);
+
+  // Określ pasmo
+  int band = 0;
+  int freq_khz = (int)(frequency / 1000);
+  if (freq_khz >= 3500 && freq_khz <= 4000) band = 80;
+  else if (freq_khz >= 7000 && freq_khz <= 7300) band = 40;
+  else if (freq_khz >= 14000 && freq_khz <= 14350) band = 20;
+  else if (freq_khz >= 21000 && freq_khz <= 21450) band = 15;
+  else if (freq_khz >= 28000 && freq_khz <= 29700) band = 10;
+  else if (freq_khz >= 50000 && freq_khz <= 54000) band = 6;
+
+  // Filtruj po pasmie jeśli ustawiony
+  if (pskFilterBand.length() > 0) {
+    int filterBand = pskFilterBand.toInt();
+    if (band != filterBand) return;
+  }
+
+  // Filtruj po trybie jeśli ustawiony
+  String modeStr = mode ? String(mode) : String("FT8");
+  if (pskFilterMode.length() > 0) {
+    if (!modeStr.equalsIgnoreCase(pskFilterMode)) return;
+  }
+
+  // Sprawdź czy monitorujemy konkretny znak
+  if (pskMqttCallsign.length() > 0) {
+    String monitorCall = pskMqttCallsign;
+    monitorCall.toUpperCase();
+    String senderCall(sender);
+    senderCall.toUpperCase();
+    if (senderCall != monitorCall) return;
+  }
+
+  // Dodaj do bufora
+  if (pskMqttSpotCount < PSK_MQTT_SPOT_BUFFER_SIZE) {
+    pskMqttSpotBuffer[pskMqttSpotCount].callsign = String(sender);
+    pskMqttSpotBuffer[pskMqttSpotCount].lat = (float)lat;
+    pskMqttSpotBuffer[pskMqttSpotCount].lon = (float)lon;
+    pskMqttSpotBuffer[pskMqttSpotCount].band = band;
+    pskMqttSpotBuffer[pskMqttSpotCount].mode = modeStr;
+    pskMqttSpotBuffer[pskMqttSpotCount].receivedAt = millis();
+    pskMqttSpotCount++;
+
+    // Debug co 10 spotów
+    if (pskMqttSpotCount % 10 == 0) {
+      Serial.printf("[PSK MQTT] Bufor: %d spotów\n", pskMqttSpotCount);
+    }
+  }
+}
+
+// Łączenie z MQTT z timeout i loop() - naprawia problem zawieszania
+void reconnectPskMqtt() {
+  if (!wifiConnected) return;
+
+  unsigned long now = millis();
+  // Sprawdź czy minął czas od ostatniej próby
+  if (now - lastPskMqttReconnectAttempt < PSK_MQTT_RECONNECT_INTERVAL_MS) {
+    return;
+  }
+  lastPskMqttReconnectAttempt = now;
+
+  // Jeśli już połączony, tylko loop()
+  if (pskMqttClient.connected()) {
+    pskMqttClient.loop();
+    return;
+  }
+
+  Serial.print("[PSK MQTT] Łączenie z MQTT...");
+
+  // Generuj client ID
+  String clientId = "ESP32-HAM-CLOCK-" + String(random(0xffff), HEX);
+
+  // Timeout dla połączenia - nie blokujący
+  unsigned long connectStart = millis();
+  bool connected = false;
+
+  // Próba połączenia z timeout 5 sekund
+  while (!connected && (millis() - connectStart < 5000)) {
+    connected = pskMqttClient.connect(clientId.c_str());
+    if (!connected) {
+      pskMqttClient.loop(); // KLUCZOWE: loop() podczas prób!
+      delay(100);
+    }
+  }
+
+  if (connected) {
+    Serial.println(" połączono!");
+    pskMqttConnected = true;
+
+    // Subskrybuj precyzyjny topic
+    String topic;
+    if (userLocator.length() >= 4) {
+      topic = getPskMqttTopicForLocator(userLocator);
+    } else {
+      // Fallback - subskrybuj wszystko (może być spam)
+      topic = "pskr/filter/v2/+/+/+/+/+";
+    }
+
+    Serial.printf("[PSK MQTT] Subskrypcja: %s\n", topic.c_str());
+    pskMqttClient.subscribe(topic.c_str());
+  } else {
+    Serial.println(" nieudane, ponowię za 5s");
+    pskMqttConnected = false;
+  }
+}
+
+// Główna funkcja loop dla MQTT
+void loopPskMqtt() {
+  if (!pskMqttEnabled) return;
+  if (!wifiConnected) {
+    pskMqttConnected = false;
+    return;
+  }
+
+  // Konfiguracja przy pierwszym uruchomieniu
+  static bool mqttInitialized = false;
+  if (!mqttInitialized) {
+    pskMqttClient.setServer(pskMqttServer.c_str(), pskMqttPort);
+    pskMqttClient.setCallback(pskMqttCallback);
+    mqttInitialized = true;
+  }
+
+  // Reconnect lub utrzymanie połączenia (z loop() w środku!)
+  reconnectPskMqtt();
+
+  // Obsługa MQTT loop
+  if (pskMqttClient.connected()) {
+    pskMqttClient.loop();
+  }
+
+  // Przetwarzanie bufora i rysowanie co zadany interwał
+  processPskMqttBuffer();
+}
+
+// Przetwarza bufor i kopiuje do głównej tablicy spotów dla wyświetlenia
+void processPskMqttBuffer() {
+  unsigned long now = millis();
+
+  // Sprawdź czy czas na rysowanie
+  if (now - lastPskMqttDrawMs < PSK_MQTT_DRAW_INTERVAL_MS) {
+    return;
+  }
+  lastPskMqttDrawMs = now;
+
+  if (pskMqttSpotCount == 0) return;
+
+  // Kopiuj do głównej tablicy spotów
+  pskSpotCount = 0;
+  for (int i = 0; i < pskMqttSpotCount && i < PSK_MAX_SPOTS; i++) {
+    pskSpots[pskSpotCount].callsign = pskMqttSpotBuffer[i].callsign;
+    pskSpots[pskSpotCount].lat = pskMqttSpotBuffer[i].lat;
+    pskSpots[pskSpotCount].lon = pskMqttSpotBuffer[i].lon;
+    pskSpots[pskSpotCount].band = pskMqttSpotBuffer[i].band;
+    pskSpots[pskSpotCount].mode = pskMqttSpotBuffer[i].mode;
+    pskSpots[pskSpotCount].snr = 0; // MQTT nie daje SNR
+    pskSpots[pskSpotCount].timestamp = pskMqttSpotBuffer[i].receivedAt;
+    pskSpotCount++;
+  }
+
+  // Czyść bufor
+  pskMqttSpotCount = 0;
+
+  // Odśwież wyświetlacz jeśli na ekranie PSK
+  if (currentScreen == SCREEN_PSK_MAP && tftInitialized && !pskMapMenuOpen) {
+    Serial.printf("[PSK MQTT] Rysowanie %d spotów\n", pskSpotCount);
+    drawPskMap();
+  }
+}
+
+// Setup MQTT - wywoływane przy starcie
+void setupPskMqtt() {
+  pskMqttClient.setServer(pskMqttServer.c_str(), pskMqttPort);
+  pskMqttClient.setCallback(pskMqttCallback);
+  Serial.println("[PSK MQTT] Zainicjalizowano klienta MQTT");
 }
 
 // ========== SETUP & LOOP ==========
 
 void setup() {
+  // Najpierw inicjalizacja Serial dla diagnostyki
+  Serial.begin(115200);
+  delay(100);
+  Serial.println("\n\n[SETUP] START");
+  
   // Disable brownout detector to prevent resets due to voltage drops
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   
@@ -18221,17 +19094,13 @@ void setup() {
   Serial.println("[SETUP] QRZ cache cleared");
 
   // Ten log idzie "kanałem" (zwykle tym samym co bootlog),
-  // który pozwala sprawdzić czy aplikacja w ogóle startuje.
-  esp_rom_printf("\nAPP: setup() start\n");
-
-  Serial.begin(115200);
   // Na ESP32-C3 (zwłaszcza z USB CDC) warto chwilę poczekać na monitor portu
   unsigned long serialWaitStart = millis();
   while (!Serial && (millis() - serialWaitStart) < 2000) {
     delay(10);
   }
   delay(200);
-  esp_rom_printf("APP: Serial.begin done\n");
+  Serial.println("[SETUP] Serial ready");
 
   // Daj chwilĂ„â„˘ na ustabilizowanie WiFi/PHY po resecie (zwÄąâ€šaszcza na "Super Mini")
   delay(300);
@@ -18310,6 +19179,7 @@ void setup() {
   yield();
 
   bootLogLine("Config load...");
+  bootLogLine("LittleFS ready: " + String(littleFsReady ? "YES" : "NO"));
   loadPreferences();
   
   // TYMCZASOWA NAPRAWA KONFIGURACJI
@@ -18421,23 +19291,32 @@ void setup() {
     }
     delay(50);
   }
+  // Odświeżaj ikonę baterii co 1 sekundę podczas czekania
+  unsigned long now = millis();
+  if (now - lastBatteryUpdate >= 1000) {
+    lastBatteryUpdate = now;
+    updateBatteryStatus();
+    drawBatteryQuickUpdate(true);
+  }
+  delay(50);
   bootSequenceActive = false;
   drawScreen(currentScreen);
   resetTftAutoSwitchTimer();
   if (currentScreen == SCREEN_HAM_CLOCK) {
-    updateScreen1();
-  }
+    ensureScreenOrderValid();
 
-  if (uiTaskHandle == nullptr) {
-    xTaskCreatePinnedToCore(
-      uiTaskLoop,
-      "UI_Task",
-      8192,
-      nullptr,
-      2,
-      &uiTaskHandle,
-      1
-    );
+    // ----- ZADANIA FreeRTOS
+    if (uiTaskHandle == nullptr) {
+      xTaskCreatePinnedToCore(
+        uiTaskLoop,
+        "UI_Task",
+        8192,
+        nullptr,
+        2,
+        &uiTaskHandle,
+        1
+      );
+    }
   }
 #endif
 }
@@ -18498,6 +19377,9 @@ void loop() {
 
   // Obsługa wygaszacza ekranu (Matrix)
   checkScreenSaverTimeout();
+
+  // Obsługa uśpienia ekranu
+  checkScreenSleepTimeout();
 
   // Jeśli jesteśmy offline, zostajemy w AP (portal) â€” stabilnie.
   
@@ -18815,6 +19697,11 @@ void loop() {
       potaTelnetClient.print("\r\n");
       lastPotaKeepAliveMs = now;
     }
+  }
+  
+  // Obsługa MQTT PSK Reporter (w tle, nawet gdy nie na ekranie PSK)
+  if (pskMqttEnabled) {
+    loopPskMqtt();
   }
   
   // Aktualizacja pomiaru baterii (TP4056 + 18650)
