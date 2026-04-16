@@ -227,9 +227,13 @@ Szczegóły w pliku [CHANGELOG.md](CHANGELOG.md).
 
 ## 📞 Kontakt
 
+**Autor oryginału:**
 - **Email:** sp3kon@gmail.com
+- **GitHub:** [SP3KON/ESP32-HAM-CLOCK](https://github.com/SP3KON/ESP32-HAM-CLOCK)
+
+**Modyfikacje:**
+- **Email:** SP9TNV@gmail.com
 - **GitHub:** [Tom50505050/esp32-ham-clock](https://github.com/Tom50505050/esp32-ham-clock)
-- **Oryginalny projekt:** [SP3KON/ESP32-HAM-CLOCK](https://github.com/SP3KON/ESP32-HAM-CLOCK)
 
 ---
 
