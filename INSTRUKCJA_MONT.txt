@@ -10,7 +10,7 @@ PROJEKT: ESP32-HAM-CLOCK z monitoringiem baterii
                          AUTOR I LICENCJA
 ================================================================================
 
-Autor oryginalnego projektu: Krzysztof Błaszczyk, SP3KON
+Autor oryginalnego projektu: Konrad Wiśniewski SP3KON
 Oryginalny projekt: https://github.com/SP3KON/ESP32-HAM-CLOCK
 Modyfikacje w wersji 1.2b:
 - Rozszerzona obsługa PSK Reporter z filtrowaniem

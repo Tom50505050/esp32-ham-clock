@@ -4,7 +4,7 @@
 
 **Wersja firmware:** 1.2b
 
-**Autor oryginalnego projektu:** Krzysztof Błaszczyk, SP3KON  
+**Autor oryginalnego projektu:** Konrad Wiśniewski SP3KON  
 **Oryginalny projekt:** https://github.com/SP3KON/ESP32-HAM-CLOCK  
 **Modyfikacje w tej wersji:**
 - Rozszerzona obsługa PSK Reporter z filtrowaniem
