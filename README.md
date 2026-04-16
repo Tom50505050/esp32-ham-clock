@@ -1,4 +1,4 @@
-# ESP32-HAM-CLOCK v1.2b
+# ESP32-HAM-CLOCK v1.3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32-blue.svg)](https://www.espressif.com/en/products/socs/esp32)
@@ -19,6 +19,18 @@ ESP32-HAM-CLOCK to zaawansowany zegar stacji amatorskiej oparty na ESP32 z obsł
 - **HamAlert** - powiadomienia o spotach
 - **PSK Reporter** - mapa aktywności cyfrowych trybów (FT8, FT4, JS8, itp.)
 - **Propagacja** - warunki propagacyjne i indice
+
+## ✨ Nowości w wersji 1.3 (vs 1.2b)
+
+### Naprawa kolejności ekranów TFT
+- **Naprawiono zapisywanie kolejności** - usunięto błąd nadpisujący ustawienia użytkownika domyślną kolejnością przy restarcie ESP32
+- **Dodano 12 slotów** dla ekranów TFT w interfejsie WWW (wcześniej brakowało pełnej obsługi)
+- **Zsynchronizowano typy ekranów** - wszystkie 14 typów dostępnych w firmware: HAM CLOCK, DX CLUSTER, APRS-IS, APRS RADAR, BAND INFO, SUN SPOTS, WEATHER, WEATHER FORECAST, POTA, HAMALERT, PSK MAP, UNLIS HUNTER, MATRIX, OFF
+
+### Aktualizacja dokumentacji i licencji
+- **Dodano plik LICENSE** z pełną treścią licencji MIT
+- **Poprawiono autora** - Konrad Wiśniewski SP3KON
+- **Zaktualizowano instrukcje** (INSTRUKCJA_MONT.txt, INSTRUKCJA_WGRANIA_BIN.md)
 
 ## ✨ Nowości w wersji 1.2b
 
