@@ -233,4 +233,6 @@ Szczegóły w pliku [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
+**Kontakt:** SP9TNV@gmail.com
+
 **73!** 📻
