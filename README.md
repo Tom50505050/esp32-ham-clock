@@ -4,7 +4,9 @@
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32-blue.svg)](https://www.espressif.com/en/products/socs/esp32)
 [![Display: TFT](https://img.shields.io/badge/Display-TFT-green.svg)]()
 
-Modyfikacja oryginalnego projektu **ESP32-HAM-CLOCK** autorstwa [Krzysztofa Błaszczyka SP3KON](https://github.com/SP3KON/ESP32-HAM-CLOCK) o zaawansowaną obsługę PSK Reporter z interfejsem dotykowym.
+Modyfikacja oryginalnego projektu **ESP32-HAM-CLOCK** autorstwa [Konrad Wiśniewski SP3KON](https://github.com/SP3KON/ESP32-HAM-CLOCK) o zaawansowaną obsługę PSK Reporter z interfejsem dotykowym.
+
+Ten projekt jest objęty licencją MIT.
 
 ## 🎯 O projekcie
 
