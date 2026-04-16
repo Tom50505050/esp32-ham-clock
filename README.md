@@ -6,8 +6,6 @@
 
 Modyfikacja oryginalnego projektu **ESP32-HAM-CLOCK** autorstwa [Konrad Wiśniewski SP3KON](https://github.com/SP3KON/ESP32-HAM-CLOCK) o zaawansowaną obsługę PSK Reporter z interfejsem dotykowym.
 
-**Kontakt:** [SP9TNV@gmail.com](mailto:SP9TNV@gmail.com)
-
 Ten projekt jest objęty licencją MIT.
 
 ## 🎯 O projekcie
