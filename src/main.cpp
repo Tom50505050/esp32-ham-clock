@@ -11254,17 +11254,7 @@ bool ensureQrzSession(String &sessionKey) {
   String url = "https://xmldata.qrz.com/xml/current/?username=" + urlEncode(qrzUsername) +
                ";password=" + urlEncode(qrzPassword);
   
-  // Debug log - pokaż URL z zamaskowanym hasłem
-  String debugUrl = "https://xmldata.qrz.com/xml/current/?username=" + urlEncode(qrzUsername) +
-                    ";password=*** (len=" + String(qrzPassword.length()) + ")";
-  Serial.println("[QRZ DEBUG] URL: " + debugUrl);
-  Serial.println("[QRZ DEBUG] Username: " + qrzUsername + " (len=" + String(qrzUsername.length()) + ")");
-  Serial.println("[QRZ DEBUG] Pass len: " + String(qrzPassword.length()));
-  
-  // Pokaż pierwsze i ostatnie 3 znaki zakodowanego hasła (dla weryfikacji)
-  String encodedPass = urlEncode(qrzPassword);
-  String passPreview = encodedPass.substring(0, 6) + "..." + encodedPass.substring(encodedPass.length()-6);
-  Serial.println("[QRZ DEBUG] Encoded pass preview: " + passPreview + " (total len=" + String(encodedPass.length()) + ")");
+  Serial.println("[QRZ] Login attempt for user: " + qrzUsername);
   
   HTTPClient http;
   http.setTimeout(3000);
@@ -16032,12 +16022,12 @@ void setupWebServer() {
       }
       
       wifiSSID = doc["wifi_ssid"].as<String>();
-      wifiPassword = doc["wifi_pass"].as<String>();
+      { String v = doc["wifi_pass"].as<String>(); if (v != "********") wifiPassword = v; }
       if (doc["wifi_ssid2"].is<String>()) {
         wifiSSID2 = doc["wifi_ssid2"].as<String>();
       }
       if (doc["wifi_pass2"].is<String>()) {
-        wifiPassword2 = doc["wifi_pass2"].as<String>();
+        String v = doc["wifi_pass2"].as<String>(); if (v != "********") wifiPassword2 = v;
       }
       clusterHost = doc["cluster_host"].as<String>();
       if (doc["pota_host"].is<String>()) {
@@ -16059,7 +16049,7 @@ void setupWebServer() {
         hamalertLogin = doc["hamalert_login"].as<String>();
       }
       if (doc["hamalert_password"].is<String>()) {
-        hamalertPassword = doc["hamalert_password"].as<String>();
+        String v = doc["hamalert_password"].as<String>(); if (v != "********") hamalertPassword = v;
       }
       userCallsign = doc["user_callsign"].as<String>();
       userLocator = doc["user_locator"].as<String>();
@@ -16095,10 +16085,10 @@ void setupWebServer() {
         qrzUsername = doc["qrz_user"].as<String>();
       }
       if (doc["qrz_pass"].is<String>()) {
-        qrzPassword = doc["qrz_pass"].as<String>();
+        String v = doc["qrz_pass"].as<String>(); if (v != "********") qrzPassword = v;
       }
       if (doc["weather_key"].is<String>()) {
-        weatherApiKey = doc["weather_key"].as<String>();
+        String v = doc["weather_key"].as<String>(); if (v != "********") weatherApiKey = v;
       }
       if (doc["openwebrx_url"].is<String>()) {
         openWebRxUrl = doc["openwebrx_url"].as<String>();
@@ -16621,7 +16611,7 @@ void setupWebServer() {
   });
 
   // API - usuń plik z LittleFS
-  server->on("/api/delete_file", HTTP_GET, []() {
+  server->on("/api/delete_file", HTTP_POST, []() {
     if (!server->hasArg("path")) {
       server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"missing_path\"}");
       return;
@@ -16629,6 +16619,11 @@ void setupWebServer() {
     String path = server->arg("path");
     if (!path.startsWith("/")) {
       path = "/" + path;
+    }
+    // Path traversal protection
+    if (path.indexOf("..") >= 0) {
+      server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"invalid_path\"}");
+      return;
     }
     if (!littleFsReady) {
       server->send(500, "application/json", "{\"status\":\"error\",\"message\":\"littlefs_not_ready\"}");
@@ -16659,6 +16654,11 @@ void setupWebServer() {
       if (!filename.startsWith("/")) {
         filename = "/" + filename;
       }
+      // Path traversal protection
+      if (filename.indexOf("..") >= 0) {
+        Serial.println("[UPLOAD] Rejected: path traversal attempt");
+        return;
+      }
       if (!littleFsReady) {
         Serial.println("LittleFS not ready for upload");
         return;
@@ -16678,6 +16678,7 @@ void setupWebServer() {
       if (!filename.startsWith("/")) {
         filename = "/" + filename;
       }
+      if (filename.indexOf("..") >= 0) return;
       File f = LittleFS.open(filename, "a");
       if (f) {
         f.write(upload.buf, upload.currentSize);
@@ -16692,9 +16693,9 @@ void setupWebServer() {
   server->on("/api/config", HTTP_GET, []() {
     StaticJsonDocument<4096> doc;
     doc["wifi_ssid"] = wifiSSID;
-    doc["wifi_pass"] = wifiPassword;
+    doc["wifi_pass"] = wifiPassword.length() > 0 ? "********" : "";
     doc["wifi_ssid2"] = wifiSSID2;
-    doc["wifi_pass2"] = wifiPassword2;
+    doc["wifi_pass2"] = wifiPassword2.length() > 0 ? "********" : "";
     doc["cluster_host"] = clusterHost;
     doc["cluster_port"] = clusterPort;
     doc["pota_host"] = potaClusterHost;
@@ -16704,7 +16705,7 @@ void setupWebServer() {
     doc["hamalert_host"] = hamalertHost;
     doc["hamalert_port"] = hamalertPort;
     doc["hamalert_login"] = hamalertLogin;
-    doc["hamalert_password"] = hamalertPassword;
+    doc["hamalert_password"] = hamalertPassword.length() > 0 ? "********" : "";
     doc["user_callsign"] = userCallsign;
     doc["user_locator"] = userLocator;
     doc["timezone"] = timezoneHours;
@@ -16712,8 +16713,8 @@ void setupWebServer() {
     doc["user_lon"] = userLon;
     doc["user_lat_lon_valid"] = userLatLonValid;
     doc["qrz_user"] = qrzUsername;
-    doc["qrz_pass"] = qrzPassword;
-    doc["weather_key"] = weatherApiKey;
+    doc["qrz_pass"] = qrzPassword.length() > 0 ? "********" : "";
+    doc["weather_key"] = weatherApiKey.length() > 0 ? "********" : "";
     doc["openwebrx_url"] = openWebRxUrl;
     doc["tft_backlight"] = backlightPercent;
     doc["tft_invert"] = sanitizeTftInvertSetting(tftInvertColors);
