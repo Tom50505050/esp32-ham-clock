@@ -82,6 +82,7 @@ void drawQrzInfoScreen();
 void handleQrzInfoTouch(uint16_t x, uint16_t y);
 
 void drawHamburgerMenuButton3D(int x, int y);
+static void drawScreenHeader(const String &title);
 void handleTouchCalibrationTouch(int16_t rawX, int16_t rawY, uint16_t x, uint16_t y, bool isNewTap);
 static bool isAprsAlertCloseButtonHit(uint16_t x, uint16_t y);
 static void dismissAprsAlertScreen();
@@ -3622,20 +3623,7 @@ void updateScreen2Data() {
 void drawPotaCluster() {
   // Użyj tych samych współrzędnych co w drawHamClock() - ograniczenie do obszaru ramki
 
-  tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-
-  drawHamburgerMenuButton3D(5, 7);
-
-  // Napis POTA.app
-  tft.setTextSize(2);
-  String potaText = "POTA.app";
-  int potaX = 45;
-  tft.setCursor(potaX, 8);
-  tft.print(potaText);
-
-  // Ikona WiFi w górnym prawym rogu
-  drawWifiSignalBars(445, 4);
+  drawScreenHeader("POTA.app");
 
   // ZEGAR w prawym górnym rogu - USUNIĘTY
   // struct tm timeinfo;
@@ -4089,17 +4077,7 @@ static String formatHamalertTftTime(const String &rawTime) {
 void drawHamalertCluster() {
   tft.fillScreen(TFT_BLACK);
 
-  tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-
-  drawHamburgerMenuButton3D(5, 7);
-
-  tft.setTextSize(2);
-  tft.setCursor(35, 8);
-  tft.print("HAMALERT.org");
-
-  // Ikona WiFi w górnym prawym rogu
-  drawWifiSignalBars(445, 4);
+  drawScreenHeader("HAMALERT.org");
 
   // ZEGAR - rysowany osobno przez updateHamalertClock()
 
@@ -4929,24 +4907,27 @@ void handleTouchNavigation() {
     }
   }
 }
+// ========== SHARED SCREEN HEADER UTILITY ==========
+
+// Draw the standard orange header bar with hamburger menu, title, and WiFi icon.
+static void drawScreenHeader(const String &title) {
+  tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
+  tft.setTextColor(TFT_BLACK);
+  drawHamburgerMenuButton3D(5, 7);
+  tft.setTextSize(2);
+  tft.setCursor(35, 8);
+  tft.print(title);
+  drawWifiSignalBars(445, 4);
+}
+
+// ========== END SHARED SCREEN HEADER UTILITY ==========
+
 // Ekran 2: DX Cluster
 void drawDxCluster() {
   tft.fillScreen(TFT_BLACK);
 
   // 1. NAGÄąÂÄ‚â€śWEK: Belka z menu, nazwĂ„â€¦ klastra i czasem UTC
-  tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
-  tft.setTextColor(TFT_BLACK);
-
-// IKONA MENU (3D)
-drawHamburgerMenuButton3D(5, 7);
-
-// Nazwa klastra - przesunięta w prawo (x=35 zamiast 5), by zrobić miejsce na menu
-tft.setTextSize(2);
-tft.setCursor(35, 8);
-tft.print(clusterHost);
-
-  // Ikona WiFi w górnym prawym rogu
-  drawWifiSignalBars(445, 4);
+  drawScreenHeader(clusterHost);
 
   // ZEGAR - rysowany osobno przez updateDxClusterClock()
 
@@ -5354,6 +5335,110 @@ static void drawScreen6MenuCheckButton(int x, int y, const char *label, bool che
   tft.print(label);
 }
 
+// ========== SHARED FILTER MENU UTILITY ==========
+
+struct FilterMenuConfig {
+  const char *title;
+  int activeMode;         // current mode index (0=ALL,1=CW,2=SSB,3=DIGI)
+  int activeBandIndex;    // current band index
+  const char **bands;     // band label array
+  int bandCount;          // number of bands
+  int bandCols;           // columns in the band grid
+  int modeTileW;
+  int modeTileH;
+  int modeGap;
+  int bandTileW;
+  int bandTileH;
+  int bandGap;
+  int modeY;              // y position of mode row
+  int bandLabelY;         // y position of "BAND" label
+  int bandStartY;         // y position of first band row
+  int closeY;             // y position of close button
+  uint8_t titleSize;      // text size for title
+};
+
+// Draw a mode+band filter menu from config.
+static void drawModeBandFilterMenu(const FilterMenuConfig &cfg) {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(cfg.titleSize);
+  tft.setCursor(10, cfg.titleSize == 3 ? 8 : 6);
+  tft.print(cfg.title);
+
+  tft.setTextSize(cfg.titleSize == 3 ? 2 : 1);
+  tft.setTextColor(TFT_LIGHTGREY);
+  tft.setCursor(10, cfg.titleSize == 3 ? 45 : 28);
+  tft.print("MODE");
+
+  const int modeStartX = (480 - (4 * cfg.modeTileW + 3 * cfg.modeGap)) / 2;
+  const char *modeLabels[] = {"ALL", "CW", "SSB", "DIGI"};
+  for (int i = 0; i < 4; i++) {
+    drawFilterTile(modeStartX + i * (cfg.modeTileW + cfg.modeGap), cfg.modeY,
+                   cfg.modeTileW, cfg.modeTileH, modeLabels[i], cfg.activeMode == i);
+  }
+
+  tft.setTextColor(TFT_LIGHTGREY);
+  tft.setCursor(10, cfg.bandLabelY);
+  tft.print("BAND");
+
+  const int bandStartX = (480 - (cfg.bandCols * cfg.bandTileW + (cfg.bandCols - 1) * cfg.bandGap)) / 2;
+  int bandIdx = 0;
+  int rows = (cfg.bandCount + cfg.bandCols - 1) / cfg.bandCols;
+  for (int row = 0; row < rows; row++) {
+    for (int col = 0; col < cfg.bandCols; col++) {
+      if (bandIdx >= cfg.bandCount) break;
+      int x = bandStartX + col * (cfg.bandTileW + cfg.bandGap);
+      int y = cfg.bandStartY + row * (cfg.bandTileH + cfg.bandGap);
+      drawFilterTile(x, y, cfg.bandTileW, cfg.bandTileH, cfg.bands[bandIdx], cfg.activeBandIndex == bandIdx);
+      bandIdx++;
+    }
+  }
+
+  const int closeW = 140;
+  const int closeH = 40;
+  const int closeX = (480 - closeW) / 2;
+  drawFilterTile(closeX, cfg.closeY, closeW, closeH, "CLOSE", false);
+}
+
+// Handle touch on a mode+band filter menu. Returns: 0=not handled, 1=mode changed, 2=band changed, 3=close.
+// outIndex receives the new mode or band index when result is 1 or 2.
+static int handleModeBandFilterTouch(const FilterMenuConfig &cfg, uint16_t x, uint16_t y, int &outIndex) {
+  const int modeStartX = (480 - (4 * cfg.modeTileW + 3 * cfg.modeGap)) / 2;
+  for (int i = 0; i < 4; i++) {
+    int rx = modeStartX + i * (cfg.modeTileW + cfg.modeGap);
+    if (isPointInRect(x, y, rx, cfg.modeY, cfg.modeTileW, cfg.modeTileH)) {
+      outIndex = i;
+      return 1;
+    }
+  }
+
+  const int bandStartX = (480 - (cfg.bandCols * cfg.bandTileW + (cfg.bandCols - 1) * cfg.bandGap)) / 2;
+  int bandIdx = 0;
+  int rows = (cfg.bandCount + cfg.bandCols - 1) / cfg.bandCols;
+  for (int row = 0; row < rows; row++) {
+    for (int col = 0; col < cfg.bandCols; col++) {
+      if (bandIdx >= cfg.bandCount) break;
+      int rx = bandStartX + col * (cfg.bandTileW + cfg.bandGap);
+      int ry = cfg.bandStartY + row * (cfg.bandTileH + cfg.bandGap);
+      if (isPointInRect(x, y, rx, ry, cfg.bandTileW, cfg.bandTileH)) {
+        outIndex = bandIdx;
+        return 2;
+      }
+      bandIdx++;
+    }
+  }
+
+  const int closeW = 140;
+  const int closeH = 40;
+  const int closeX = (480 - closeW) / 2;
+  if (isPointInRect(x, y, closeX, cfg.closeY, closeW, closeH)) {
+    return 3;
+  }
+  return 0;
+}
+
+// ========== END SHARED FILTER MENU UTILITY ==========
+
 void drawDxClusterFilterMenu() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
@@ -5563,195 +5648,73 @@ void handleScreen6MenuTouch(uint16_t x, uint16_t y) {
   }
 }
 
+static FilterMenuConfig getPotaFilterConfig() {
+  FilterMenuConfig cfg = {};
+  cfg.title = "POTA FILTERS";
+  cfg.activeMode = (int)screen7FilterMode;
+  cfg.activeBandIndex = screen7FilterBandIndex;
+  cfg.bands = (const char **)SCREEN2_FILTER_BANDS;
+  cfg.bandCount = SCREEN2_FILTER_BANDS_COUNT;
+  cfg.bandCols = 3;
+  cfg.modeTileW = 70; cfg.modeTileH = 26; cfg.modeGap = 6;
+  cfg.bandTileW = 90; cfg.bandTileH = 24; cfg.bandGap = 6;
+  cfg.modeY = 40; cfg.bandLabelY = 82; cfg.bandStartY = 96;
+  cfg.closeY = 210; cfg.titleSize = 2;
+  return cfg;
+}
+
 void drawPotaFilterMenu() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(10, 6);
-  tft.print("POTA FILTERS");
-
-  tft.setTextSize(1);
-  tft.setTextColor(TFT_LIGHTGREY);
-  tft.setCursor(10, 28);
-  tft.print("MODE");
-
-  const int modeTileW = 70;
-  const int modeTileH = 26;
-  const int modeGap = 6;
-  const int modeStartX = (480 - (4 * modeTileW + 3 * modeGap)) / 2;
-  const int modeY = 40;
-  drawFilterTile(modeStartX + 0 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "ALL", screen7FilterMode == FILTER_MODE_ALL);
-  drawFilterTile(modeStartX + 1 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "CW", screen7FilterMode == FILTER_MODE_CW);
-  drawFilterTile(modeStartX + 2 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "SSB", screen7FilterMode == FILTER_MODE_SSB);
-  drawFilterTile(modeStartX + 3 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "DIGI", screen7FilterMode == FILTER_MODE_DIGI);
-
-  tft.setTextColor(TFT_LIGHTGREY);
-  tft.setCursor(10, 82);
-  tft.print("BAND");
-
-  const int bandTileW = 90;
-  const int bandTileH = 24;
-  const int bandGap = 6;
-  const int bandStartX = (480 - (3 * bandTileW + 2 * bandGap)) / 2;
-  const int bandStartY = 96;
-  int bandIdx = 0;
-  for (int row = 0; row < 3; row++) {
-    for (int col = 0; col < 3; col++) {
-      if (bandIdx >= SCREEN2_FILTER_BANDS_COUNT) break;
-      int x = bandStartX + col * (bandTileW + bandGap);
-      int y = bandStartY + row * (bandTileH + bandGap);
-      drawFilterTile(x, y, bandTileW, bandTileH, SCREEN2_FILTER_BANDS[bandIdx], screen7FilterBandIndex == bandIdx);
-      bandIdx++;
-    }
-  }
-
-  const int closeW = 100;
-  const int closeH = 26;
-  const int closeX = (480 - closeW) / 2;
-  const int closeY = 210;
-  drawFilterTile(closeX, closeY, closeW, closeH, "CLOSE", false);
+  drawModeBandFilterMenu(getPotaFilterConfig());
 }
 
 void handleScreen7MenuTouch(uint16_t x, uint16_t y) {
-  const int modeTileW = 70;
-  const int modeTileH = 26;
-  const int modeGap = 6;
-  const int modeStartX = (480 - (4 * modeTileW + 3 * modeGap)) / 2;
-  const int modeY = 40;
-
-  for (int i = 0; i < 4; i++) {
-    int rx = modeStartX + i * (modeTileW + modeGap);
-    if (isPointInRect(x, y, rx, modeY, modeTileW, modeTileH)) {
-      screen7FilterMode = (Screen2FilterMode)i;
-      drawPotaFilterMenu();
-      return;
-    }
-  }
-
-  const int bandTileW = 90;
-  const int bandTileH = 24;
-  const int bandGap = 6;
-  const int bandStartX = (480 - (3 * bandTileW + 2 * bandGap)) / 2;
-  const int bandStartY = 96;
-  int bandIdx = 0;
-  for (int row = 0; row < 3; row++) {
-    for (int col = 0; col < 3; col++) {
-      if (bandIdx >= SCREEN2_FILTER_BANDS_COUNT) break;
-      int rx = bandStartX + col * (bandTileW + bandGap);
-      int ry = bandStartY + row * (bandTileH + bandGap);
-      if (isPointInRect(x, y, rx, ry, bandTileW, bandTileH)) {
-        screen7FilterBandIndex = bandIdx;
-        drawPotaFilterMenu();
-        return;
-      }
-      bandIdx++;
-    }
-  }
-
-  const int closeW = 100;
-  const int closeH = 26;
-  const int closeX = (480 - closeW) / 2;
-  const int closeY = 210;
-  if (isPointInRect(x, y, closeX, closeY, closeW, closeH)) {
+  FilterMenuConfig cfg = getPotaFilterConfig();
+  int idx;
+  int result = handleModeBandFilterTouch(cfg, x, y, idx);
+  if (result == 1) {
+    screen7FilterMode = (Screen2FilterMode)idx;
+    drawPotaFilterMenu();
+  } else if (result == 2) {
+    screen7FilterBandIndex = idx;
+    drawPotaFilterMenu();
+  } else if (result == 3) {
     inMenu = false;
     drawScreen(SCREEN_POTA_CLUSTER);
-    return;
   }
+}
+
+static FilterMenuConfig getHamalertFilterConfig() {
+  FilterMenuConfig cfg = {};
+  cfg.title = "HAMALERT FILTR";
+  cfg.activeMode = (int)screen8FilterMode;
+  cfg.activeBandIndex = screen8FilterBandIndex;
+  cfg.bands = (const char **)SCREEN8_FILTER_BANDS;
+  cfg.bandCount = SCREEN8_FILTER_BANDS_COUNT;
+  cfg.bandCols = 4;
+  cfg.modeTileW = 70; cfg.modeTileH = 26; cfg.modeGap = 6;
+  cfg.bandTileW = 72; cfg.bandTileH = 24; cfg.bandGap = 6;
+  cfg.modeY = 40; cfg.bandLabelY = 82; cfg.bandStartY = 96;
+  cfg.closeY = 210; cfg.titleSize = 2;
+  return cfg;
 }
 
 void drawHamalertFilterMenu() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(10, 6);
-  tft.print("HAMALERT FILTR");
-
-  tft.setTextSize(1);
-  tft.setTextColor(TFT_LIGHTGREY);
-  tft.setCursor(10, 28);
-  tft.print("MODE");
-
-  const int modeTileW = 70;
-  const int modeTileH = 26;
-  const int modeGap = 6;
-  const int modeStartX = (480 - (4 * modeTileW + 3 * modeGap)) / 2;
-  const int modeY = 40;
-  drawFilterTile(modeStartX + 0 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "ALL", screen8FilterMode == FILTER_MODE_ALL);
-  drawFilterTile(modeStartX + 1 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "CW", screen8FilterMode == FILTER_MODE_CW);
-  drawFilterTile(modeStartX + 2 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "SSB", screen8FilterMode == FILTER_MODE_SSB);
-  drawFilterTile(modeStartX + 3 * (modeTileW + modeGap), modeY, modeTileW, modeTileH, "DIGI", screen8FilterMode == FILTER_MODE_DIGI);
-
-  tft.setTextColor(TFT_LIGHTGREY);
-  tft.setCursor(10, 82);
-  tft.print("BAND");
-
-  const int bandTileW = 72;
-  const int bandTileH = 24;
-  const int bandGap = 6;
-  const int bandStartX = (480 - (4 * bandTileW + 3 * bandGap)) / 2;
-  const int bandStartY = 96;
-  int bandIdx = 0;
-  for (int row = 0; row < 3; row++) {
-    for (int col = 0; col < 4; col++) {
-      if (bandIdx >= SCREEN8_FILTER_BANDS_COUNT) break;
-      int x = bandStartX + col * (bandTileW + bandGap);
-      int y = bandStartY + row * (bandTileH + bandGap);
-      drawFilterTile(x, y, bandTileW, bandTileH, SCREEN8_FILTER_BANDS[bandIdx], screen8FilterBandIndex == bandIdx);
-      bandIdx++;
-    }
-  }
-
-  const int closeW = 100;
-  const int closeH = 26;
-  const int closeX = (480 - closeW) / 2;
-  const int closeY = 210;
-  drawFilterTile(closeX, closeY, closeW, closeH, "CLOSE", false);
+  drawModeBandFilterMenu(getHamalertFilterConfig());
 }
 
 void handleScreen8MenuTouch(uint16_t x, uint16_t y) {
-  const int modeTileW = 70;
-  const int modeTileH = 26;
-  const int modeGap = 6;
-  const int modeStartX = (480 - (4 * modeTileW + 3 * modeGap)) / 2;
-  const int modeY = 40;
-
-  for (int i = 0; i < 4; i++) {
-    int rx = modeStartX + i * (modeTileW + modeGap);
-    if (isPointInRect(x, y, rx, modeY, modeTileW, modeTileH)) {
-      screen8FilterMode = (Screen2FilterMode)i;
-      drawHamalertFilterMenu();
-      return;
-    }
-  }
-
-  const int bandTileW = 72;
-  const int bandTileH = 24;
-  const int bandGap = 6;
-  const int bandStartX = (480 - (4 * bandTileW + 3 * bandGap)) / 2;
-  const int bandStartY = 96;
-  int bandIdx = 0;
-  for (int row = 0; row < 3; row++) {
-    for (int col = 0; col < 4; col++) {
-      if (bandIdx >= SCREEN8_FILTER_BANDS_COUNT) break;
-      int rx = bandStartX + col * (bandTileW + bandGap);
-      int ry = bandStartY + row * (bandTileH + bandGap);
-      if (isPointInRect(x, y, rx, ry, bandTileW, bandTileH)) {
-        screen8FilterBandIndex = bandIdx;
-        drawHamalertFilterMenu();
-        return;
-      }
-      bandIdx++;
-    }
-  }
-
-  const int closeW = 100;
-  const int closeH = 26;
-  const int closeX = (480 - closeW) / 2;
-  const int closeY = 210;
-  if (isPointInRect(x, y, closeX, closeY, closeW, closeH)) {
+  FilterMenuConfig cfg = getHamalertFilterConfig();
+  int idx;
+  int result = handleModeBandFilterTouch(cfg, x, y, idx);
+  if (result == 1) {
+    screen8FilterMode = (Screen2FilterMode)idx;
+    drawHamalertFilterMenu();
+  } else if (result == 2) {
+    screen8FilterBandIndex = idx;
+    drawHamalertFilterMenu();
+  } else if (result == 3) {
     inMenu = false;
     drawScreen(SCREEN_HAMALERT_CLUSTER);
-    return;
   }
 }
 
@@ -7015,31 +6978,89 @@ static bool parsePropagationXml(const String &xml, PropagationData &out) {
   return true;
 }
 
+// ========== SHARED HTTP UTILITIES ==========
+
+// Perform an HTTP GET and return the response body as a String.
+// Returns empty string on failure; outHttpCode receives the status code.
+static String httpGetString(const String &url, int timeoutMs, int &outHttpCode) {
+  HTTPClient http;
+  http.setTimeout(timeoutMs);
+  if (!http.begin(url)) {
+    outHttpCode = -1;
+    return "";
+  }
+  outHttpCode = http.GET();
+  if (outHttpCode != HTTP_CODE_OK) {
+    http.end();
+    return "";
+  }
+  String body = http.getString();
+  http.end();
+  return body;
+}
+
+// Perform an HTTPS GET (insecure/skip cert verification) and return response body.
+// Returns empty string on failure; outHttpCode receives the status code.
+static String httpsGetString(const String &url, int timeoutMs, int &outHttpCode) {
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  http.setTimeout(timeoutMs);
+  if (!http.begin(client, url)) {
+    outHttpCode = -1;
+    return "";
+  }
+  outHttpCode = http.GET();
+  if (outHttpCode != HTTP_CODE_OK) {
+    http.end();
+    return "";
+  }
+  String body = http.getString();
+  http.end();
+  return body;
+}
+
+// Perform an HTTPS GET and parse the response as streamed JSON with a filter document.
+// Returns true on success (doc is populated), false on failure.
+static bool httpsGetJson(const String &url, int timeoutMs,
+                         const DynamicJsonDocument &filter, DynamicJsonDocument &doc,
+                         int &outHttpCode) {
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  http.setTimeout(timeoutMs);
+  if (!http.begin(client, url)) {
+    outHttpCode = -1;
+    return false;
+  }
+  outHttpCode = http.GET();
+  if (outHttpCode != HTTP_CODE_OK) {
+    http.end();
+    return false;
+  }
+  WiFiClient *stream = http.getStreamPtr();
+  DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
+  http.end();
+  if (err) {
+    return false;
+  }
+  return true;
+}
+
+// ========== END SHARED HTTP UTILITIES ==========
+
 bool fetchPropagationData() {
   if (WiFi.status() != WL_CONNECTED) {
     propagationData.lastError = "WiFi offline";
     return false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  http.setTimeout(8000);
-  if (!http.begin(client, PROPAGATION_URL)) {
-    propagationData.lastError = "HTTP begin failed";
+  int httpCode;
+  String payload = httpsGetString(PROPAGATION_URL, 8000, httpCode);
+  if (payload.length() == 0) {
+    propagationData.lastError = (httpCode == -1) ? "HTTP begin failed" : ("HTTP " + String(httpCode));
     return false;
   }
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    propagationData.lastError = "HTTP " + String(httpCode);
-    http.end();
-    return false;
-  }
-
-  String payload = http.getString();
-  http.end();
 
   if (!parsePropagationXml(payload, propagationData)) {
     propagationData.lastError = "Parse error";
@@ -7510,31 +7531,10 @@ bool fetchWeatherData() {
     weatherData.detailValid[i] = false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-
   String langParam = (tftLanguage == TFT_LANG_EN) ? "en" : "pl";
   String url = "https://api.openweathermap.org/data/2.5/weather?lat=" +
                String(lat, 4) + "&lon=" + String(lon, 4) +
                "&appid=" + weatherApiKey + "&units=metric&lang=" + langParam;
-
-  HTTPClient http;
-  http.setTimeout(8000);
-  if (!http.begin(client, url)) {
-    weatherData.lastError = "HTTP begin failed";
-    weatherData.valid = false;
-    return false;
-  }
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    weatherData.lastError = "HTTP " + String(httpCode);
-    weatherData.valid = false;
-    http.end();
-    return false;
-  }
-
-  WiFiClient *stream = http.getStreamPtr();
 
   DynamicJsonDocument filter(512);
   filter["cod"] = true;
@@ -7549,10 +7549,9 @@ bool fetchWeatherData() {
   filter["wind"]["speed"] = true;
 
   DynamicJsonDocument doc(1536);
-  DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-  http.end();
-  if (err) {
-    weatherData.lastError = "JSON error";
+  int httpCode;
+  if (!httpsGetJson(url, 8000, filter, doc, httpCode)) {
+    weatherData.lastError = (httpCode == -1) ? "HTTP begin failed" : ("HTTP " + String(httpCode));
     weatherData.valid = false;
     return false;
   }
@@ -7615,27 +7614,10 @@ bool fetchWeatherForecast(double lat, double lon) {
     return false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-
   String langParam = (tftLanguage == TFT_LANG_EN) ? "en" : "pl";
   String url = "https://api.openweathermap.org/data/2.5/forecast?lat=" +
                String(lat, 4) + "&lon=" + String(lon, 4) +
                "&appid=" + weatherApiKey + "&units=metric&lang=" + langParam + "&cnt=40";
-
-  HTTPClient http;
-  http.setTimeout(8000);
-  if (!http.begin(client, url)) {
-    return false;
-  }
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    http.end();
-    return false;
-  }
-
-  WiFiClient *stream = http.getStreamPtr();
 
   DynamicJsonDocument filter(1024);
   filter["list"][0]["dt"] = true;
@@ -7648,9 +7630,8 @@ bool fetchWeatherForecast(double lat, double lon) {
   filter["city"]["name"] = true;
 
   DynamicJsonDocument doc(16384);
-  DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-  http.end();
-  if (err) {
+  int httpCode;
+  if (!httpsGetJson(url, 8000, filter, doc, httpCode)) {
     return false;
   }
 
@@ -7853,35 +7834,17 @@ bool fetchAirPollutionData(double lat, double lon) {
     return false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-
   String url = "https://api.openweathermap.org/data/2.5/air_pollution?lat=" +
                String(lat, 4) + "&lon=" + String(lon, 4) +
                "&appid=" + weatherApiKey;
-
-  HTTPClient http;
-  http.setTimeout(8000);
-  if (!http.begin(client, url)) {
-    return false;
-  }
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    http.end();
-    return false;
-  }
-
-  WiFiClient *stream = http.getStreamPtr();
 
   DynamicJsonDocument filter(256);
   filter["list"][0]["components"]["pm2_5"] = true;
   filter["list"][0]["components"]["pm10"] = true;
 
   DynamicJsonDocument doc(768);
-  DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-  http.end();
-  if (err) {
+  int httpCode;
+  if (!httpsGetJson(url, 8000, filter, doc, httpCode)) {
     return false;
   }
 
@@ -11266,17 +11229,12 @@ bool ensureQrzSession(String &sessionKey) {
   String passPreview = encodedPass.substring(0, 6) + "..." + encodedPass.substring(encodedPass.length()-6);
   Serial.println("[QRZ DEBUG] Encoded pass preview: " + passPreview + " (total len=" + String(encodedPass.length()) + ")");
   
-  HTTPClient http;
-  http.setTimeout(3000);
-  http.begin(url);
-  int code = http.GET();
-  if (code != 200) {
-    http.end();
+  int code;
+  String body = httpGetString(url, 3000, code);
+  if (body.length() == 0) {
     qrzStatus = "QRZ: login http " + String(code);
     return false;
   }
-  String body = http.getString();
-  http.end();
 
   String err = extractXmlTagValue(body, "Error");
   if (err.length() == 0) {
@@ -11347,18 +11305,13 @@ bool fetchCallookCallsignInfo(const String &callsign, String &outGrid, String &o
   }
 
   String url = "https://callook.info/" + call + "/json";
-  HTTPClient http;
-  http.setTimeout(5000);
-  http.begin(url);
-  int code = http.GET();
-  if (code != 200) {
-    http.end();
+  int code;
+  String body = httpGetString(url, 5000, code);
+  if (body.length() == 0) {
     Serial.print("[CALLOOK] HTTP error: ");
     Serial.println(code);
     return false;
   }
-  String body = http.getString();
-  http.end();
 
   // Parse JSON response
   DynamicJsonDocument doc(1024);
@@ -11660,18 +11613,13 @@ bool fetchHamQthCallsignInfo(const String &callsign, String &outGrid, String &ou
 
   // HamQTH API - no login required for basic info
   String url = "https://www.hamqth.com/dxcc_json.php?callsign=" + call + "&apikey=ESP32HAMCLOCK";
-  HTTPClient http;
-  http.setTimeout(5000);
-  http.begin(url);
-  int code = http.GET();
-  if (code != 200) {
-    http.end();
+  int code;
+  String body = httpGetString(url, 5000, code);
+  if (body.length() == 0) {
     Serial.print("[HAMQTH] HTTP error: ");
     Serial.println(code);
     return false;
   }
-  String body = http.getString();
-  http.end();
 
   // Parse JSON response
   DynamicJsonDocument doc(1024);
@@ -11792,17 +11740,12 @@ bool fetchQrzCallsignInfo(const String &callsign, String &outGrid, String &outCo
 
   String url = "https://xmldata.qrz.com/xml/current/?s=" + sessionKey +
                ";callsign=" + callsign;
-  HTTPClient http;
-  http.setTimeout(3000);
-  http.begin(url);
-  int code = http.GET();
-  if (code != 200) {
-    http.end();
+  int code;
+  String body = httpGetString(url, 3000, code);
+  if (body.length() == 0) {
     qrzStatus = "QRZ: lookup http " + String(code);
     return false;
   }
-  String body = http.getString();
-  http.end();
 
   // Obsługa błędu sesji - spróbuj raz odświeżyć
   if (body.indexOf("Session Timeout") >= 0 || body.indexOf("Invalid session") >= 0) {
@@ -12403,17 +12346,12 @@ bool fetchQrzRawXml(const String &callsign, String &body) {
 
   String url = "https://xmldata.qrz.com/xml/current/?s=" + sessionKey +
                ";callsign=" + callsign;
-  HTTPClient http;
-  http.setTimeout(3000);
-  http.begin(url);
-  int code = http.GET();
-  if (code != 200) {
-    http.end();
+  int code;
+  body = httpGetString(url, 3000, code);
+  if (body.length() == 0) {
     qrzStatus = "QRZ: lookup http " + String(code);
     return false;
   }
-  body = http.getString();
-  http.end();
 
   if (body.indexOf("Session Timeout") >= 0 || body.indexOf("Invalid session") >= 0) {
     String dummy;
@@ -17883,7 +17821,6 @@ static void latLonToScreen(float lat, float lon, int &x, int &y) {
 bool fetchPskReporterData() {
   if (!wifiConnected) return false;
 
-  HTTPClient http;
   // Użyj własnego URL jeśli ustawiony, w przeciwnym razie domyślny
   String baseUrl = pskCustomUrl.length() > 0 ? pskCustomUrl : "https://retrieve.pskreporter.info/query?";
   String url = baseUrl;
@@ -17916,19 +17853,13 @@ bool fetchPskReporterData() {
   Serial.print("[PSK] URL: ");
   Serial.println(url);
 
-  http.setTimeout(10000);
-  http.begin(url);
-  int httpCode = http.GET();
-
-  if (httpCode != 200) {
+  int httpCode;
+  String payload = httpGetString(url, 10000, httpCode);
+  if (payload.length() == 0) {
     Serial.print("[PSK] HTTP error: ");
     Serial.println(httpCode);
-    http.end();
     return false;
   }
-
-  String payload = http.getString();
-  http.end();
 
   DynamicJsonDocument doc(8192);
   DeserializationError error = deserializeJson(doc, payload);
@@ -18335,15 +18266,6 @@ static void drawPskSettingsMenu() {
   else if (pskActiveField == PSK_FIELD_MODE_SELECT) {
     drawPskModeSelector();
   }
-}
-
-// Funkcja obliczająca dystans (km) - wzór Haversine
-static float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
-  float p = 0.017453292519943295; // Pi/180
-  float a = 0.5 - cos((lat2 - lat1) * p) / 2 +
-            cos(lat1 * p) * cos(lat2 * p) *
-            (1 - cos((lon2 - lon1) * p)) / 2;
-  return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
 }
 
 // Funkcja zwracająca kolor linii zależny od odległości DX
