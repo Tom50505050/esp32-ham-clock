@@ -7535,6 +7535,13 @@ bool fetchWeatherData() {
   }
 
   WiFiClient *stream = http.getStreamPtr();
+  if (!stream) {
+    Serial.println("[WEATHER] Stream pointer is null");
+    weatherData.lastError = "Stream error";
+    weatherData.valid = false;
+    http.end();
+    return false;
+  }
 
   DynamicJsonDocument filter(512);
   filter["cod"] = true;
@@ -7626,16 +7633,24 @@ bool fetchWeatherForecast(double lat, double lon) {
   HTTPClient http;
   http.setTimeout(8000);
   if (!http.begin(client, url)) {
+    Serial.println("[WEATHER] Forecast http.begin failed");
     return false;
   }
 
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
+    Serial.print("[WEATHER] Forecast HTTP error: ");
+    Serial.println(httpCode);
     http.end();
     return false;
   }
 
   WiFiClient *stream = http.getStreamPtr();
+  if (!stream) {
+    Serial.println("[WEATHER] Forecast stream pointer is null");
+    http.end();
+    return false;
+  }
 
   DynamicJsonDocument filter(1024);
   filter["list"][0]["dt"] = true;
@@ -7651,6 +7666,8 @@ bool fetchWeatherForecast(double lat, double lon) {
   DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
   http.end();
   if (err) {
+    Serial.print("[WEATHER] Forecast JSON parse error: ");
+    Serial.println(err.c_str());
     return false;
   }
 
@@ -7863,16 +7880,24 @@ bool fetchAirPollutionData(double lat, double lon) {
   HTTPClient http;
   http.setTimeout(8000);
   if (!http.begin(client, url)) {
+    Serial.println("[AIR] http.begin failed");
     return false;
   }
 
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
+    Serial.print("[AIR] HTTP error: ");
+    Serial.println(httpCode);
     http.end();
     return false;
   }
 
   WiFiClient *stream = http.getStreamPtr();
+  if (!stream) {
+    Serial.println("[AIR] Stream pointer is null");
+    http.end();
+    return false;
+  }
 
   DynamicJsonDocument filter(256);
   filter["list"][0]["components"]["pm2_5"] = true;
@@ -7882,6 +7907,8 @@ bool fetchAirPollutionData(double lat, double lon) {
   DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
   http.end();
   if (err) {
+    Serial.print("[AIR] JSON parse error: ");
+    Serial.println(err.c_str());
     return false;
   }
 
@@ -11268,7 +11295,11 @@ bool ensureQrzSession(String &sessionKey) {
   
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(url);
+  if (!http.begin(url)) {
+    Serial.println("[QRZ] Login http.begin failed");
+    qrzStatus = "QRZ: http.begin failed";
+    return false;
+  }
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11349,7 +11380,10 @@ bool fetchCallookCallsignInfo(const String &callsign, String &outGrid, String &o
   String url = "https://callook.info/" + call + "/json";
   HTTPClient http;
   http.setTimeout(5000);
-  http.begin(url);
+  if (!http.begin(url)) {
+    Serial.println("[CALLOOK] http.begin failed");
+    return false;
+  }
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11662,7 +11696,10 @@ bool fetchHamQthCallsignInfo(const String &callsign, String &outGrid, String &ou
   String url = "https://www.hamqth.com/dxcc_json.php?callsign=" + call + "&apikey=ESP32HAMCLOCK";
   HTTPClient http;
   http.setTimeout(5000);
-  http.begin(url);
+  if (!http.begin(url)) {
+    Serial.println("[HAMQTH] http.begin failed");
+    return false;
+  }
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11794,7 +11831,11 @@ bool fetchQrzCallsignInfo(const String &callsign, String &outGrid, String &outCo
                ";callsign=" + callsign;
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(url);
+  if (!http.begin(url)) {
+    Serial.println("[QRZ] Lookup http.begin failed");
+    qrzStatus = "QRZ: http.begin failed";
+    return false;
+  }
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -12192,6 +12233,11 @@ bool fetchPotaApi() {
   Serial.println(" (may be -1 if chunked)");
 
   WiFiClient *stream = http.getStreamPtr();
+  if (!stream) {
+    Serial.println("[POTA] Stream pointer is null");
+    http.end();
+    return false;
+  }
   DynamicJsonDocument filter(512);
   JsonObject filterRootArray = filter[0].to<JsonObject>();
   filterRootArray["activatorLastSpotTime"] = true;
@@ -12222,14 +12268,22 @@ bool fetchPotaApi() {
     HTTPClient retry;
     retry.setTimeout(8000);
     if (!retry.begin(potaApiUrl)) {
+      Serial.println("[POTA] Retry http.begin failed");
       return false;
     }
     int retryCode = retry.GET();
     if (retryCode != HTTP_CODE_OK) {
+      Serial.print("[POTA] Retry HTTP error: ");
+      Serial.println(retryCode);
       retry.end();
       return false;
     }
     WiFiClient *retryStream = retry.getStreamPtr();
+    if (!retryStream) {
+      Serial.println("[POTA] Retry stream pointer is null");
+      retry.end();
+      return false;
+    }
     DynamicJsonDocument fullDoc(400000);
     DeserializationError retryErr = deserializeJson(fullDoc, *retryStream);
     retry.end();
@@ -12405,7 +12459,11 @@ bool fetchQrzRawXml(const String &callsign, String &body) {
                ";callsign=" + callsign;
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(url);
+  if (!http.begin(url)) {
+    Serial.println("[QRZ] Background lookup http.begin failed");
+    qrzStatus = "QRZ: http.begin failed";
+    return false;
+  }
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -14402,10 +14460,10 @@ void updateNTPTime() {
   
   Serial.println("[NTP] Aktualizacja czasu NTP...");
   configTime(GMT_OFFSET_SEC, 0, NTP_SERVER);
-  lastNTPUpdate = now;
   
   struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
+  if (getLocalTime(&timeinfo, 5000)) {
+    lastNTPUpdate = now;
     Serial.println("[NTP] Czas NTP zsynchronizowany");
   } else {
     Serial.println("[NTP] BÄąÂĂ„â€žD: Nie udaÄąâ€šo siĂ„â„˘ pobraĂ„â€ˇ czasu NTP");
@@ -15685,8 +15743,13 @@ void setupWebServer() {
   server->on("/", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
-      server->streamFile(f, "text/html; charset=utf-8");
-      f.close();
+      if (f) {
+        server->streamFile(f, "text/html; charset=utf-8");
+        f.close();
+      } else {
+        Serial.println("[WEB] Failed to open /index.html");
+        server->send(200, "text/html; charset=utf-8", getMainHTML());
+      }
     } else {
       server->send(200, "text/html; charset=utf-8", getMainHTML());
     }
@@ -15696,8 +15759,13 @@ void setupWebServer() {
   server->on("/index.html", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
-      server->streamFile(f, "text/html; charset=utf-8");
-      f.close();
+      if (f) {
+        server->streamFile(f, "text/html; charset=utf-8");
+        f.close();
+      } else {
+        Serial.println("[WEB] Failed to open /index.html");
+        server->send(200, "text/html; charset=utf-8", getMainHTML());
+      }
     } else {
       server->send(200, "text/html; charset=utf-8", getMainHTML());
     }
@@ -15707,12 +15775,22 @@ void setupWebServer() {
   server->on("/indexEN.html", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/indexEN.html")) {
       File f = LittleFS.open("/indexEN.html", "r");
-      server->streamFile(f, "text/html; charset=utf-8");
-      f.close();
+      if (f) {
+        server->streamFile(f, "text/html; charset=utf-8");
+        f.close();
+      } else {
+        Serial.println("[WEB] Failed to open /indexEN.html");
+        server->send(200, "text/html; charset=utf-8", getMainHTML());
+      }
     } else if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
-      server->streamFile(f, "text/html; charset=utf-8");
-      f.close();
+      if (f) {
+        server->streamFile(f, "text/html; charset=utf-8");
+        f.close();
+      } else {
+        Serial.println("[WEB] Failed to open /index.html (EN fallback)");
+        server->send(200, "text/html; charset=utf-8", getMainHTML());
+      }
     } else {
       server->send(200, "text/html; charset=utf-8", getMainHTML());
     }
@@ -15727,8 +15805,13 @@ void setupWebServer() {
   server->on("/manual.txt", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/manual.txt")) {
       File f = LittleFS.open("/manual.txt", "r");
-      server->streamFile(f, "text/plain; charset=utf-8");
-      f.close();
+      if (f) {
+        server->streamFile(f, "text/plain; charset=utf-8");
+        f.close();
+      } else {
+        Serial.println("[WEB] Failed to open /manual.txt");
+        server->send(500, "text/plain", "Failed to read manual.txt");
+      }
     } else {
       server->send(404, "text/plain", "manual.txt missing in LittleFS");
     }
@@ -16660,16 +16743,16 @@ void setupWebServer() {
         filename = "/" + filename;
       }
       if (!littleFsReady) {
-        Serial.println("LittleFS not ready for upload");
+        Serial.println("[UPLOAD] LittleFS not ready for upload");
         return;
       }
-      Serial.printf("Uploading: %s\n", filename.c_str());
+      Serial.printf("[UPLOAD] Uploading: %s\n", filename.c_str());
       if (LittleFS.exists(filename)) {
         LittleFS.remove(filename);
       }
       File f = LittleFS.open(filename, "w");
       if (!f) {
-        Serial.println("Failed to open file for writing");
+        Serial.println("[UPLOAD] Failed to open file for writing");
         return;
       }
       f.close();
@@ -16682,9 +16765,11 @@ void setupWebServer() {
       if (f) {
         f.write(upload.buf, upload.currentSize);
         f.close();
+      } else {
+        Serial.println("[UPLOAD] Failed to open file for appending");
       }
     } else if (upload.status == UPLOAD_FILE_END) {
-      Serial.printf("Upload finished: %s, size: %d\n", upload.filename.c_str(), upload.totalSize);
+      Serial.printf("[UPLOAD] Upload finished: %s, size: %d\n", upload.filename.c_str(), upload.totalSize);
     }
   });
   
@@ -16847,22 +16932,26 @@ void setupWebServer() {
         Serial.println("[UPLOAD] Invalid file type, must be .bmp");
         return;
       }
-      if (littleFsReady) {
-        LittleFS.remove(PSK_MAP_BMP_PATH); // Usuń starą mapę
-        File f = LittleFS.open(PSK_MAP_BMP_PATH, "w");
-        if (!f) {
-          Serial.println("[UPLOAD] Failed to open file for writing");
-          return;
-        }
-        f.close();
-        Serial.printf("[UPLOAD] Starting upload: %s\n", filename.c_str());
+      if (!littleFsReady) {
+        Serial.println("[UPLOAD] LittleFS not ready for BMP upload");
+        return;
       }
+      LittleFS.remove(PSK_MAP_BMP_PATH);
+      File f = LittleFS.open(PSK_MAP_BMP_PATH, "w");
+      if (!f) {
+        Serial.println("[UPLOAD] Failed to open BMP file for writing");
+        return;
+      }
+      f.close();
+      Serial.printf("[UPLOAD] Starting BMP upload: %s\n", filename.c_str());
     } else if (upload.status == UPLOAD_FILE_WRITE) {
       if (littleFsReady) {
         File f = LittleFS.open(PSK_MAP_BMP_PATH, "a");
         if (f) {
           f.write(upload.buf, upload.currentSize);
           f.close();
+        } else {
+          Serial.println("[UPLOAD] Failed to open BMP file for appending");
         }
       }
     } else if (upload.status == UPLOAD_FILE_END) {
@@ -17917,7 +18006,10 @@ bool fetchPskReporterData() {
   Serial.println(url);
 
   http.setTimeout(10000);
-  http.begin(url);
+  if (!http.begin(url)) {
+    Serial.println("[PSK] http.begin failed");
+    return false;
+  }
   int httpCode = http.GET();
 
   if (httpCode != 200) {
@@ -18880,7 +18972,9 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
   StaticJsonDocument<1024> doc;
   DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
-    return; // Ciche pominięcie błędów parsowania
+    Serial.print("[PSK MQTT] JSON parse error: ");
+    Serial.println(error.c_str());
+    return;
   }
 
   // Pobierz pola z JSON
