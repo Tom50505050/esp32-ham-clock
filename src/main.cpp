@@ -15215,7 +15215,9 @@ void handleScreenSleepMenuTouch(uint16_t x, uint16_t y) {
   }
   // Plus 1 min
   if (isPointInRect(x, y, minStartX + minTileW + minGap, minY, minTileW, minTileH)) {
-    screenSleepMenuTimeoutMin++;
+    if (screenSleepMenuTimeoutMin < 60) {
+      screenSleepMenuTimeoutMin++;
+    }
     drawScreenSleepMenu();
     return;
   }
@@ -15442,7 +15444,7 @@ void loadPreferences() {
   // Konfiguracja uśpienia ekranu
   screenSleepEnabled = preferences->getBool("sleep_en", false);
   screenSleepTimeoutMin = preferences->getInt("sleep_timeout", DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN);
-  if (screenSleepTimeoutMin < 1) screenSleepTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN;
+  if (screenSleepTimeoutMin < 1 || screenSleepTimeoutMin > 60) screenSleepTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN;
   screenSleepMenuTimeoutMin = screenSleepTimeoutMin;
   screenSleepLastActivityMs = millis();
   screenSleepActive = false;
