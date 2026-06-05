@@ -57,7 +57,6 @@ void normalizePolish(String &text);
 #include <LittleFS.h>
 #include <math.h>
 #include <ctype.h>
-#include <WiFiClient.h>  
 
 static const char* tr(TrKey key);
 static void buildWeatherDetailHeaders(String headers[WEATHER_DETAIL_COLS]);
@@ -15439,6 +15438,14 @@ void loadPreferences() {
   int savedType = preferences->getInt("saver_type", 0);
   if (savedType < 0 || savedType > 2) savedType = 0;
   screenSaverType = (ScreenSaverType)savedType;
+
+  // Konfiguracja uśpienia ekranu
+  screenSleepEnabled = preferences->getBool("sleep_en", false);
+  screenSleepTimeoutMin = preferences->getInt("sleep_timeout", DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN);
+  if (screenSleepTimeoutMin < 1) screenSleepTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN;
+  screenSleepMenuTimeoutMin = screenSleepTimeoutMin;
+  screenSleepLastActivityMs = millis();
+  screenSleepActive = false;
   
   // Konfiguracja filtrów CC-Cluster
   clusterNoAnnouncements = preferences->getBool("cluster_noann", true);
@@ -15575,6 +15582,10 @@ void savePreferences() {
   // Konfiguracja wygaszacza ekranu (Matrix)
   preferences->putBool("ss_enabled", screenSaverEnabled);
   preferences->putInt("ss_timeout", screenSaverTimeoutMin);
+
+  // Konfiguracja uśpienia ekranu
+  preferences->putBool("sleep_en", screenSleepEnabled);
+  preferences->putInt("sleep_timeout", screenSleepTimeoutMin);
   
   // Konfiguracja APRS-IS
   preferences->putString("aprs_host", aprsIsHost);
@@ -17879,6 +17890,24 @@ static void latLonToScreen(float lat, float lon, int &x, int &y) {
   y = MAP_DISPLAY_Y + (int)(yNormalized * MAP_DISPLAY_H);
 }
 
+// Mapowanie częstotliwości (kHz) na pasmo amatorskie dla spotów PSK.
+// Zwraca 0 jeśli częstotliwość nie pasuje do żadnego pasma.
+static int pskBandFromFreqKhz(int freq_khz) {
+  if (freq_khz >= 1800 && freq_khz <= 2000) return 160;
+  if (freq_khz >= 3500 && freq_khz <= 4000) return 80;
+  if (freq_khz >= 5351 && freq_khz <= 5367) return 60;
+  if (freq_khz >= 7000 && freq_khz <= 7300) return 40;
+  if (freq_khz >= 10100 && freq_khz <= 10150) return 30;
+  if (freq_khz >= 14000 && freq_khz <= 14350) return 20;
+  if (freq_khz >= 18068 && freq_khz <= 18168) return 17;
+  if (freq_khz >= 21000 && freq_khz <= 21450) return 15;
+  if (freq_khz >= 24890 && freq_khz <= 24990) return 12;
+  if (freq_khz >= 28000 && freq_khz <= 29700) return 10;
+  if (freq_khz >= 50000 && freq_khz <= 54000) return 6;
+  if (freq_khz >= 144000 && freq_khz <= 148000) return 2;
+  return 0;
+}
+
 // Pobieranie danych z PSK Reporter
 bool fetchPskReporterData() {
   if (!wifiConnected) return false;
@@ -17959,13 +17988,7 @@ bool fetchPskReporterData() {
       if (callsign && locator) {
         // Określ pasmo z częstotliwości
         int freq_khz = frequency / 1000;
-        int band = 0;
-        if (freq_khz >= 3500 && freq_khz <= 4000) band = 80;
-        else if (freq_khz >= 7000 && freq_khz <= 7300) band = 40;
-        else if (freq_khz >= 14000 && freq_khz <= 14350) band = 20;
-        else if (freq_khz >= 21000 && freq_khz <= 21450) band = 15;
-        else if (freq_khz >= 28000 && freq_khz <= 29700) band = 10;
-        else if (freq_khz >= 50000 && freq_khz <= 54000) band = 6;
+        int band = pskBandFromFreqKhz(freq_khz);
 
         // Filtruj po pasmie jeśli ustawiony
         if (pskFilterBand.length() > 0) {
@@ -18005,13 +18028,19 @@ bool fetchPskReporterData() {
 // Kolory dla pasm
 static uint16_t getPskBandColor(int band) {
   switch (band) {
-    case 80: return TFT_RED;
-    case 40: return TFT_ORANGE;
-    case 20: return TFT_GREEN;
-    case 15: return TFT_CYAN;
-    case 10: return TFT_BLUE;
-    case 6:  return TFT_MAGENTA;
-    default: return TFT_WHITE;
+    case 160: return TFT_MAROON;
+    case 80:  return TFT_RED;
+    case 60:  return TFT_OLIVE;
+    case 40:  return TFT_ORANGE;
+    case 30:  return TFT_YELLOW;
+    case 20:  return TFT_GREEN;
+    case 17:  return TFT_PINK;
+    case 15:  return TFT_CYAN;
+    case 12:  return TFT_VIOLET;
+    case 10:  return TFT_BLUE;
+    case 6:   return TFT_MAGENTA;
+    case 2:   return TFT_SKYBLUE;
+    default:  return TFT_WHITE;
   }
 }
 
@@ -18899,14 +18928,8 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
   locatorToLatLon(locStr, lat, lon);
 
   // Określ pasmo
-  int band = 0;
   int freq_khz = (int)(frequency / 1000);
-  if (freq_khz >= 3500 && freq_khz <= 4000) band = 80;
-  else if (freq_khz >= 7000 && freq_khz <= 7300) band = 40;
-  else if (freq_khz >= 14000 && freq_khz <= 14350) band = 20;
-  else if (freq_khz >= 21000 && freq_khz <= 21450) band = 15;
-  else if (freq_khz >= 28000 && freq_khz <= 29700) band = 10;
-  else if (freq_khz >= 50000 && freq_khz <= 54000) band = 6;
+  int band = pskBandFromFreqKhz(freq_khz);
 
   // Filtruj po pasmie jeśli ustawiony
   if (pskFilterBand.length() > 0) {
@@ -18943,6 +18966,13 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
     if (pskMqttSpotCount % 10 == 0) {
       Serial.printf("[PSK MQTT] Bufor: %d spotów\n", pskMqttSpotCount);
     }
+  } else {
+    // Bufor pełny - spot pominięty (sygnalizuj rzadko, by nie zalać logów)
+    static unsigned long lastFullWarnMs = 0;
+    if (millis() - lastFullWarnMs > 5000) {
+      lastFullWarnMs = millis();
+      Serial.printf("[PSK MQTT] Bufor pełny (%d), spot pominięty\n", PSK_MQTT_SPOT_BUFFER_SIZE);
+    }
   }
 }
 
@@ -18968,18 +18998,10 @@ void reconnectPskMqtt() {
   // Generuj client ID
   String clientId = "ESP32-HAM-CLOCK-" + String(random(0xffff), HEX);
 
-  // Timeout dla połączenia - nie blokujący
-  unsigned long connectStart = millis();
-  bool connected = false;
-
-  // Próba połączenia z timeout 5 sekund
-  while (!connected && (millis() - connectStart < 5000)) {
-    connected = pskMqttClient.connect(clientId.c_str());
-    if (!connected) {
-      pskMqttClient.loop(); // KLUCZOWE: loop() podczas prób!
-      delay(100);
-    }
-  }
+  // Pojedyncza, nieblokująca próba połączenia. Funkcja jest już ograniczona
+  // do jednej próby co PSK_MQTT_RECONNECT_INTERVAL_MS, więc nie blokujemy
+  // pętli głównej przez kilka sekund (poprzednio delay(100) w pętli do 5s).
+  bool connected = pskMqttClient.connect(clientId.c_str());
 
   if (connected) {
     Serial.println(" połączono!");
