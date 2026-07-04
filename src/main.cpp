@@ -2819,7 +2819,7 @@ String getPolishNameDay() {
 void drawDateLine(const String &dateText) {
   const int screenW = 480;
   const int timeY = 130;  // Taka sama jak w drawHamClock
-  const int dateY = timeY + 105;  // Taka sama jak w drawHamClock
+  const int dateY = timeY + 84;  // Taka sama jak w drawHamClock
 
   // Czyść obszar daty (szeroki prostokąt na całej szerokości)
   tft.fillRect(30, dateY - 2, 420, 24, TFT_BLACK);
@@ -3145,7 +3145,7 @@ void drawHamClock() {
   int labelWidth = tft.textWidth(timeLabel);
   int labelX = (screenW - labelWidth) / 2;
   tft.setTextColor(TFT_LIGHTGREY);
-  tft.setCursor(labelX, timeY + 90);
+  tft.setCursor(labelX, timeY + 66);
   tft.print(timeLabel);
 
   // 5. DATA - Dokładnie wyśrodkowana
@@ -3161,7 +3161,7 @@ void drawHamClock() {
   }
   
   // Data - używamy fontu VLW jeśli dostępny, inaczej standardowy
-  int dateY = timeY + 105;  // Pozycja Y daty - używana też w imieninach
+  int dateY = timeY + 84;  // Pozycja Y daty - używana też w imieninach
   if (littleFsReady && LittleFS.exists(ROBOTO_FONT20_FILE)) {
     tft.loadFont(ROBOTO_FONT20_NAME, LittleFS);
     tft.setTextColor(TFT_WHITE);
@@ -3183,7 +3183,7 @@ void drawHamClock() {
   if (tftLanguage != TFT_LANG_EN) {
     String nameDayText = getPolishNameDay();
     if (nameDayText.length() > 0) {
-      int nameDayY = dateY + 35;  // Pozycja pod datą
+      int nameDayY = dateY + 30;  // Pozycja pod datą
       
       // Używamy fontu VLW jeśli dostępny (obsługuje polskie znaki)
       if (littleFsReady && LittleFS.exists(ROBOTO_FONT12_FILE)) {
