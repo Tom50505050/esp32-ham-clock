@@ -1,0 +1,7 @@
+{
+    "C_Cpp.errorSquiggles": "Disabled",
+    "windsurfPyright.analysis.useLibraryCodeForTypes": true,
+    "windsurfPyright.analysis.inlayHints.functionReturnTypes": true,
+    "windsurfPyright.analysis.fileEnumerationTimeout": 20,
+    "workbench.colorTheme": "Default High Contrast"
+}

@@ -1,0 +1,148 @@
+================================================================================
+ESP32-HAM-CLOCK - Instrukcja Techniczna i Konfiguracji
+================================================================================
+
+UKŁAD WYPROWADZEŃ (PINOUT)
+================================================================================
+
+WYŚWIETLACZ TFT (ILI9488 480x320):
+-----------------------------------
+GPIO 18  - TFT_SCLK  (SPI Clock)
+GPIO 23  - TFT_MOSI  (SPI MOSI)
+GPIO 19  - TFT_MISO  (SPI MISO)
+GPIO 15  - TFT_CS    (Chip Select)
+GPIO 2   - TFT_DC    (Data/Command)
+GPIO -1  - TFT_RST   (Reset - nie podłączony)
+GPIO 32  - TFT_BL    (Backlight - PWM)
+
+KONTROLER DOTYKU (XPT2046):
+----------------------------
+GPIO 18  - TOUCH_CLK (SPI Clock - współdzielony z TFT)
+GPIO 19  - TOUCH_MISO (SPI MISO - współdzielony z TFT)
+GPIO 23  - TOUCH_MOSI (SPI MOSI - współdzielony z TFT)
+GPIO 21  - TOUCH_CS  (Chip Select)
+GPIO 22  - TOUCH_IRQ (Interrupt)
+
+MONITOROWANIE BATERII:
+----------------------
+GPIO 34  - BATTERY_ADC (ADC1_CH6 - pomiar napięcia baterii)
+          - Dzielnik napięcia 100k/100k (1:2)
+          - Napięcie referencyjne ADC: 3.3V
+          - Rozdzielczość ADC: 12 bit (0-4095)
+
+DIODY RGB (STATUS):
+------------------
+GPIO 4   - RGB_LED_RED   (Czerwona - WiFi status)
+GPIO 16  - RGB_LED_GREEN (Zielona - status połączenia)
+GPIO 17  - RGB_LED_BLUE  (Niebieska - APRS alert)
+
+INSTRUKCJA WGRYWANIA FIRMWARE
+================================================================================
+
+WYMAGANE PLIKI:
+---------------
+0x1000-bootloader.bin  (17536 bytes)
+0x8000-partitions.bin  (3072 bytes)
+0x10000-firmware.bin   (1384640 bytes)
+0x1C0000-littlefs.bin  (2359296 bytes)
+
+ADRESY PAMIĘCI:
+---------------
+0x1000  -> 0x1000-bootloader.bin  (Bootloader)
+0x8000  -> 0x8000-partitions.bin  (Tabela partycji - Huge APP / No OTA)
+0x10000 -> 0x10000-firmware.bin   (Firmware - główny program)
+0x1C0000 -> 0x1C0000-littlefs.bin  (LittleFS - system plików WWW)
+
+NARZĘDZIA:
+----------
+1. Espressif Flash Download Tool (GUI)
+2. esptool.py (CLI)
+3. PlatformIO (pio run --target upload)
+
+TRYB DOWNLOAD MODE:
+------------------
+1. Podłącz ESP32 do komputera przez USB
+2. Przytrzymaj przycisk BOOT na płytce
+3. Podłącz zasilanie USB
+4. Zwolnij przycisk BOOT po 1-2 sekundach
+5. ESP32 jest teraz w trybie download mode
+
+INSTRUKCJA WGRYWANIA (esptool.py):
+-----------------------------------
+esptool.py --chip esp32 --port COM<PORT> --baud 460800 \
+  --before default_reset --after hard_reset \
+  write_flash --flash_mode dio --flash_freq 40m \
+  0x1000 0x1000-bootloader.bin \
+  0x8000 0x8000-partitions.bin \
+  0x10000 0x10000-firmware.bin \
+  0x1C0000 0x1C0000-littlefs.bin
+
+Zastąp <PORT> numerem portu COM (np. COM3 na Windows, /dev/ttyUSB0 na Linux).
+
+INSTRUKCJA WGRYWANIA (Espressif Flash Download Tool):
+-----------------------------------------------------
+1. Uruchom "flash_download_tool.exe"
+2. Wybierz chip: ESP32
+3. Wybierz tryb pracy: Develop
+4. Dodaj 4 pliki z odpowiednimi adresami:
+   - 0x1000: 0x1000-bootloader.bin
+   - 0x8000: 0x8000-partitions.bin
+   - 0x10000: 0x10000-firmware.bin
+   - 0x1C0000: 0x1C0000-littlefs.bin
+5. Ustaw baud rate: 460800 lub 921600
+6. Wybierz port COM
+7. Kliknij "START"
+
+INSTRUKCJA WGRYWANIA (PlatformIO):
+-----------------------------------
+pio run --target upload
+
+KONFIGURACJA POCZĄTKOWA
+================================================================================
+
+1. Po pierwszym uruchomieniu ESP32 utworzy Access Point:
+   - SSID: ESP32-HAM-CLOCK
+   - Hasło: (brak - otwarta sieć)
+
+2. Połącz się z AP i otwórz przeglądarkę na adres:
+   - http://192.168.4.1
+
+3. W konfiguracji WWW ustaw:
+   - WiFi SSID i hasło (dla połączenia z internetem)
+   - Dane DX Cluster (host, port)
+   - Współrzędne lokalizacji (lat, lon)
+   - Inne ustawienia według potrzeb
+
+4. Zapisz konfigurację - ESP32 zrestartuje się i połączy z WiFi
+
+FUNKCJE URZĄDZENIA
+================================================================================
+
+- DX Cluster: Odbieranie spotów DX z Telnet
+- APRS-IS: Odbieranie stacji APRS
+- POTA: Odbieranie spotów POTA
+- HAMALERT: Monitorowanie alertów HAM
+- PSK Reporter: Mapa spotów PSK
+- Propagacja: Dane propagacji słonecznej
+- Pogoda: Prognoza pogody
+- ISS Pass Tracker: Śledzenie ISS
+- Wyświetlacz TFT: 14 ekranów z automatycznym przełączaniem
+
+DIAGNOSTYKA
+================================================================================
+
+Serial Monitor (115200 baud):
+- Pokazuje logi systemowe
+- Status połączenia WiFi
+- Błędy konfiguracji
+- Status baterii
+
+Web UI:
+- http://<IP_ESP32> - strona główna
+- http://<IP_ESP32>/api/config - API konfiguracji
+- http://<IP_ESP32>/api/iss - API danych ISS
+
+================================================================================
+WERSJA FIRMWARE: 1.3
+DATA AKTUALIZACJI: 2026-06-18
+================================================================================
