@@ -1,0 +1,35 @@
+========================================
+  FLASH ESP32-HAM-CLOCK 1.4
+========================================
+
+Wymagane narzedzia:
+  - esptool (pip install esptool)
+  - lub ESPFlash (https://espressif.github.io/esptool/)
+
+1. Podlacz ESP32 kablem USB
+
+2. Sprawdz port COM:
+   - Device Manager -> Porty (COM i LPT)
+   - np. COM3, COM4, itd.
+
+3. Flashuj WSZYSTKIE 4 pliki naraz:
+   esptool.py --chip esp32 --port COM3 --baud 921600 write_flash 0x1000 0x1000-bootloader.bin 0x8000 0x8000-partitions.bin 0x10000 0x10000-firmware.bin 0x1C0000 0x1C0000-littlefs.bin
+
+   UWAGA: Zmien COM3 na swoj port!
+
+4. Lub flashuj osobno (kolejnosc重要):
+   esptool.py --chip esp32 --port COM3 --baud 921600 write_flash 0x1000 0x1000-bootloader.bin
+   esptool.py --chip esp32 --port COM3 --baud 921600 write_flash 0x8000 0x8000-partitions.bin
+   esptool.py --chip esp32 --port COM3 --baud 921600 write_flash 0x10000 0x10000-firmware.bin
+   esptool.py --chip esp32 --port COM3 --baud 921600 write_flash 0x1C0000 0x1C0000-littlefs.bin
+
+5. Po flashu:
+   - Otworz Monitor Szeregowy (115200 baud)
+   - Wlaczcz ESP32 (przycisk EN/RESET)
+   - Sprawdz logi czy LittleFS OK i czy splash sie pojawia
+
+Offsety plikow:
+  0x1000    -> 0x1000-bootloader.bin
+  0x8000    -> 0x8000-partitions.bin
+  0x10000   -> 0x10000-firmware.bin
+  0x1C0000  -> 0x1C0000-littlefs.bin

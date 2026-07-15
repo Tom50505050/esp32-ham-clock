@@ -1,39 +1,53 @@
 diff --git a/main.cpp b/main.cpp
+index 0000000..1111111 100644
 --- a/main.cpp
 +++ b/main.cpp
-@@ -2819,7 +2819,7 @@
- void drawDateLine(const String &dateText) {
-   const int screenW = 480;
-   const int timeY = 130;  // Taka sama jak w drawHamClock
--  const int dateY = timeY + 105;  // Taka sama jak w drawHamClock
-+  const int dateY = timeY + 84;  // Taka sama jak w drawHamClock
- 
-   // Czyść obszar daty (szeroki prostokąt na całej szerokości)
-   tft.fillRect(30, dateY - 2, 420, 24, TFT_BLACK);
-@@ -3145,7 +3145,7 @@
-   int labelWidth = tft.textWidth(timeLabel);
-   int labelX = (screenW - labelWidth) / 2;
-   tft.setTextColor(TFT_LIGHTGREY);
--  tft.setCursor(labelX, timeY + 90);
-+  tft.setCursor(labelX, timeY + 66);
-   tft.print(timeLabel);
- 
-   // 5. DATA - Dokładnie wyśrodkowana
-@@ -3161,7 +3161,7 @@
-   }
-   
-   // Data - używamy fontu VLW jeśli dostępny, inaczej standardowy
--  int dateY = timeY + 105;  // Pozycja Y daty - używana też w imieninach
-+  int dateY = timeY + 84;  // Pozycja Y daty - używana też w imieninach
-   if (littleFsReady && LittleFS.exists(ROBOTO_FONT20_FILE)) {
-     tft.loadFont(ROBOTO_FONT20_NAME, LittleFS);
-     tft.setTextColor(TFT_WHITE);
-@@ -3183,7 +3183,7 @@
-   if (tftLanguage != TFT_LANG_EN) {
-     String nameDayText = getPolishNameDay();
-     if (nameDayText.length() > 0) {
--      int nameDayY = dateY + 35;  // Pozycja pod datą
-+      int nameDayY = dateY + 30;  // Pozycja pod datą
-       
-       // Używamy fontu VLW jeśli dostępny (obsługuje polskie znaki)
-       if (littleFsReady && LittleFS.exists(ROBOTO_FONT12_FILE)) {
+@@ void issTask(void *pvParameters) {
+-      if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
++      if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+         fetchIssData();
+         lastIssDataFetch = millis();
+         xSemaphoreGive(issDataMutex);
+       }
+@@ void issTask(void *pvParameters) {
+-      if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
++      if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+         getIssCountryFromCoords(issLat, issLng);
+         lastIssCountryCheck = millis();
+         xSemaphoreGive(issDataMutex);
+       }
+@@ void issTask(void *pvParameters) {
+-    vTaskDelay(pdMS_TO_TICKS(100));
++    vTaskDelay(pdMS_TO_TICKS(50));
+@@ void fetchIssData() {
+-  http.setTimeout(2500);
++  http.setTimeout(1500);
+@@ void fetchIssData() {
+-    if (httpCode == 200) {
++    if (httpCode == HTTP_CODE_OK) {
+@@ void fetchIssData() {
+-    http.end();
++    http.end();
+@@ void fetchIssData() {
++  http.end();
+@@ void getIssCountryFromCoords(double lat, double lng) {
+-  http.setTimeout(2500);
++  http.setTimeout(1500);
+@@ void getIssCountryFromCoords(double lat, double lng) {
+-  if (httpCode == 200) {
++  if (httpCode == HTTP_CODE_OK) {
+@@ void getIssCountryFromCoords(double lat, double lng) {
++    http.end();
+@@ void getIssCountryFromCoords(double lat, double lng) {
++    http.end();
+@@ void updateIssDynamicDisplay() {
+-  tft.setTextSize(2);
++  tft.setTextSize(1);
+@@ void updateIssDynamicDisplay() {
++  String countryDisplay = localIssCountry;
++  if (countryDisplay.length() > 15) {
++    countryDisplay = countryDisplay.substring(0, 14) + "…";
++  }
+@@ void setup() {
+-    4096,
++    8192,

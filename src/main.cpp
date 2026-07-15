@@ -1,28 +1,28 @@
-#include <Arduino.h>
+﻿#include <Arduino.h>
 
 /*
- * ESP32-HAM-CLOCK - Odbiornik DX Cluster i stacji APRS-IS z interfejsem WWW i opcjonalnym wyświetlaczem TFT
+ * ESP32-HAM-CLOCK - Odbiornik DX Cluster i stacji APRS-IS z interfejsem WWW i opcjonalnym wyĹ›wietlaczem TFT
  * 
- * - WiFi Manager (AP mode jeśli brak zapisanych danych)
- * - Połączenie z Telnet DX Cluster (TYLKO ODBIERANIE - nie wysyła spotów)
- * - Parsowanie i przechowywanie spotów DX
- * - Obliczanie odległości (Haversine)
- * - Interfejs WWW z polling (odświeżanie co 2 sekundy)
- * - Wyświetlacz TFT (ESP32-2432S028) - opcjonalnie ESP32 WROOM + TFT ILI9341 
+ * - WiFi Manager (AP mode jeĹ›li brak zapisanych danych)
+ * - PoĹ‚Ä…czenie z Telnet DX Cluster (TYLKO ODBIERANIE - nie wysyĹ‚a spotĂłw)
+ * - Parsowanie i przechowywanie spotĂłw DX
+ * - Obliczanie odlegĹ‚oĹ›ci (Haversine)
+ * - Interfejs WWW z polling (odĹ›wieĹĽanie co 2 sekundy)
+ * - WyĹ›wietlacz TFT (ESP32-2432S028) - opcjonalnie ESP32 WROOM + TFT ILI9341 
  * 
- * UWAGA: Urządzenie działa TYLKO w trybie odbioru.
+ * UWAGA: UrzÄ…dzenie dziaĹ‚a TYLKO w trybie odbioru.
  * Tak samo z APRS.fi  - tylko odczyt.
 */
 
-// Wczesne forward-deklaracje, aby auto-prototypowanie Arduino znało typy używane w sygnaturach
-enum ScreenType : uint8_t;    // pełna definicja niżej
+// Wczesne forward-deklaracje, aby auto-prototypowanie Arduino znaĹ‚o typy uĹĽywane w sygnaturach
+enum ScreenType : uint8_t;    // peĹ‚na definicja niĹĽej
 enum Screen6ViewMode : uint8_t;
 enum TrKey : uint8_t;
-struct DXSpot;                // pełna definicja niżej
-struct APRSStation;           // pełna definicja niżej
-struct AprsWxDecoded;         // pełna definicja niżej
-struct PropagationData;       // pełna definicja niżej
-struct WeatherData;           // pełna definicja niżej
+struct DXSpot;                // peĹ‚na definicja niĹĽej
+struct APRSStation;           // peĹ‚na definicja niĹĽej
+struct AprsWxDecoded;         // peĹ‚na definicja niĹĽej
+struct PropagationData;       // peĹ‚na definicja niĹĽej
+struct WeatherData;           // peĹ‚na definicja niĹĽej
 namespace fs { class File; }
 
 static const uint8_t WEATHER_DETAIL_COLS = 5;
@@ -33,8 +33,8 @@ extern bool unlisGameOver;
 
 void normalizePolish(String &text);
 
-// ========== KONFIGURACJA WYŚWIETLACZA TFT ==========
-// Włącz TFT w platformio.ini (build_flags) lub Arduino IDE; guard to avoid redefinition warnings
+// ========== KONFIGURACJA WYĹšWIETLACZA TFT ==========
+// WĹ‚Ä…cz TFT w platformio.ini (build_flags) lub Arduino IDE; guard to avoid redefinition warnings
 #ifndef ENABLE_TFT_DISPLAY
 #define ENABLE_TFT_DISPLAY
 #endif
@@ -58,6 +58,16 @@ void normalizePolish(String &text);
 #include <math.h>
 #include <ctype.h>
 #include <WiFiClient.h>  
+
+// Prawdziwa propagacja orbity ISS (TLE + SGP4) do trajektorii na radarze i
+// przewidywania kolejnego przelotu. Biblioteka "Sgp4" (Hopperpop/Mitch Barry)
+// - trzeba jÄ… dodaÄ‡ w platformio.ini:
+//   lib_deps = https://github.com/Hopperpop/Sgp4-Library.git
+// JeĹ›li nazwy metod/pĂłl poniĹĽej nie bÄ™dÄ… siÄ™ zgadzaÄ‡ z wersjÄ… biblioteki,
+// ktĂłrÄ… PlatformIO faktycznie pobierze, sprawdĹş przykĹ‚adowy szkic w
+// .pio/libdeps/esp32dev/Sgp4-Library/examples/ - i daj znaÄ‡ bĹ‚Ä…d kompilacji,
+// dostosujÄ™ wywoĹ‚ania do dokĹ‚adnych nazw.
+#include <Sgp4.h>
 
 static const char* tr(TrKey key);
 static void buildWeatherDetailHeaders(String headers[WEATHER_DETAIL_COLS]);
@@ -124,15 +134,15 @@ const int PSK_MAX_SPOTS = 50;
 PskSpot pskSpots[PSK_MAX_SPOTS];
 int pskSpotCount = 0;
 unsigned long lastPskFetchMs = 0;
-const unsigned long PSK_FETCH_INTERVAL_MS = 60000; // co minutę
+const unsigned long PSK_FETCH_INTERVAL_MS = 900000; // co 15 minut
 
 // Konfiguracja PSKReporter (zapisana w NVS)
 String pskReceiverCallsign = "";  // znak odbiornika do filtrowania
-int pskMaxSpots = 50;             // maksymalna liczba spotów
+int pskMaxSpots = 50;             // maksymalna liczba spotĂłw
 int pskHoursWindow = 1;           // okno czasowe w godzinach
 String pskFilterBand = "";        // filtr pasmo (pusty = wszystkie)
 String pskFilterMode = "";        // filtr tryb (pusty = wszystkie)
-String pskCustomUrl = "";         // własny URL API (pusty = domyślny)
+String pskCustomUrl = "";         // wĹ‚asny URL API (pusty = domyĹ›lny)
 
 // HTTP Monitoring - monitorowanie znaku
 String pskMonitorCallsign = "";
@@ -140,10 +150,10 @@ int pskReportDays = 0;
 int pskAutoRefreshMinutes = 5;
 
 // MQTT PSK Reporter - alternatywny tryb
-bool pskMqttEnabled = false;              // Czy używać MQTT zamiast HTTP
+bool pskMqttEnabled = false;              // Czy uĹĽywaÄ‡ MQTT zamiast HTTP
 String pskMqttServer = "mqtt.pskreporter.info";  // Serwer MQTT
 int pskMqttPort = 1883;                   // Port MQTT (1883 dla plain, 8883 dla TLS)
-String pskMqttCallsign = "";             // Znak do monitorowania (jeśli pusty - monitoruje receiver)
+String pskMqttCallsign = "";             // Znak do monitorowania (jeĹ›li pusty - monitoruje receiver)
 
 WiFiClient pskMqttWifiClient;
 PubSubClient pskMqttClient(pskMqttWifiClient);
@@ -161,29 +171,30 @@ String pskTempReceiver = "";
 String pskTempBand = "";
 String pskTempMode = "";
 int pskTempMaxSpots = 50;
+int pskTempReportDays = 3;
 bool pskTempMqttEnabled = false;
 String pskTempMqttServer = "";
 String pskTempMqttCallsign = "";
 String pskKeyboardBuffer = "";  // Bufor dla klawiatury ekranowej
 int pskKeyboardTarget = 0;        // 1=znak, 2=max, 3=mqtt_server, 4=mqtt_call
 enum PskMenuField { PSK_FIELD_NONE, PSK_FIELD_CALL, PSK_FIELD_BAND, PSK_FIELD_MODE, PSK_FIELD_MAXSPOTS,
-                    PSK_FIELD_MQTT_MODE, PSK_FIELD_MQTT_SERVER, PSK_FIELD_MQTT_CALL,
+                    PSK_FIELD_MQTT_MODE, PSK_FIELD_MQTT_SERVER, PSK_FIELD_MQTT_CALL, PSK_FIELD_DAYS,
                     PSK_FIELD_KEYBOARD, PSK_FIELD_BAND_SELECT, PSK_FIELD_MODE_SELECT };
 PskMenuField pskActiveField = PSK_FIELD_NONE;
-bool pskKeyboardActive = false;  // Czy klawiatura PSK jest widoczna (blokuje nawigację)
+bool pskKeyboardActive = false;  // Czy klawiatura PSK jest widoczna (blokuje nawigacjÄ™)
 
-// Ścieżka do pliku BMP z mapą
+// ĹšcieĹĽka do pliku BMP z mapÄ…
 const char* PSK_MAP_BMP_PATH = "/Mapa swiata.bmp";
 
-// Zakres współrzędnych dla mapy (Plate Carrée - pełny zakres)
-const float MAP_LAT_MIN = -90.0f;  // min szerokość geograficzna (Antarktyda)
-const float MAP_LAT_MAX = 90.0f;   // max szerokość geograficzna (Arktyka)
-const float MAP_LON_MIN = -180.0f; // min długość geograficzna
-const float MAP_LON_MAX = 180.0f;  // max długość geograficzna
+// Zakres wspĂłĹ‚rzÄ™dnych dla mapy (Plate CarrĂ©e - peĹ‚ny zakres)
+const float MAP_LAT_MIN = -90.0f;  // min szerokoĹ›Ä‡ geograficzna (Antarktyda)
+const float MAP_LAT_MAX = 90.0f;   // max szerokoĹ›Ä‡ geograficzna (Arktyka)
+const float MAP_LON_MIN = -180.0f; // min dĹ‚ugoĹ›Ä‡ geograficzna
+const float MAP_LON_MAX = 180.0f;  // max dĹ‚ugoĹ›Ä‡ geograficzna
 const int MAP_DISPLAY_X = 0;       // pozycja X mapy na ekranie
-const int MAP_DISPLAY_Y = 0;       // pozycja Y (0 = pełny ekran)
-const int MAP_DISPLAY_W = 480;     // szerokość mapy
-const int MAP_DISPLAY_H = 320;     // wysokość mapy (480x320)
+const int MAP_DISPLAY_Y = 0;       // pozycja Y (0 = peĹ‚ny ekran)
+const int MAP_DISPLAY_W = 480;     // szerokoĹ›Ä‡ mapy
+const int MAP_DISPLAY_H = 320;     // wysokoĹ›Ä‡ mapy (480x320)
 
 // Forward declarations for Screen Saver functions
 void resetScreenSaverActivity();
@@ -206,9 +217,15 @@ static String getAprsTxCallsignWithSsid();
 void sendAPRSFilter();
 void fetchIssData();
 void getIssCountryFromCoords(double lat, double lng);
+String lookupIssCountryFromCoords(double lat, double lng);
+bool fetchIssTLE();
+void calculateIssTrajectorySGP4();
+void updateIssNextPassEstimate();
+bool fetchIssNextPassFromN2yo();
+void drawIssRadarBackground();
 
 
-// ========== TYPY EKRANÓW (używane w prototypach) ==========
+// ========== TYPY EKRANĂ“W (uĹĽywane w prototypach) ==========
 enum ScreenType : uint8_t {
   SCREEN_OFF = 0,
   SCREEN_HAM_CLOCK = 1,
@@ -232,10 +249,10 @@ enum ScreenType : uint8_t {
 #define LOGV_PRINTLN(x) do { if (LOG_VERBOSE) Serial.println(x); } while (0)
 #define LOGV_PRINTF(...) do {} while (0)
 
-// ========== WYŚWIETLACZ TFT (ESP32 DevKit + zewnętrzny SPI TFT) ==========
+// ========== WYĹšWIETLACZ TFT (ESP32 DevKit + zewnÄ™trzny SPI TFT) ==========
 #ifdef ENABLE_TFT_DISPLAY
-// Wspólna konfiguracja dla szkicu i kompilowanej osobno biblioteki TFT_eSPI.
-// Dzięki temu biblioteka nie wraca do własnego User_Setup.h z innym driverem/pinami.
+// WspĂłlna konfiguracja dla szkicu i kompilowanej osobno biblioteki TFT_eSPI.
+// DziÄ™ki temu biblioteka nie wraca do wĹ‚asnego User_Setup.h z innym driverem/pinami.
 #include "tft_setup.h"
 
 #define TFT_UI_WIDTH 480
@@ -436,8 +453,8 @@ private:
     int32_t scaledX = scaleX(x);
     int32_t scaledY = scaleY(y);
 
-    // BMP-y ikon pogodowych są przesyłane po jednym wierszu, więc można je
-    // bezpiecznie przeskalować w poziomie bez ruszania reszty kodu.
+    // BMP-y ikon pogodowych sÄ… przesyĹ‚ane po jednym wierszu, wiÄ™c moĹĽna je
+    // bezpiecznie przeskalowaÄ‡ w poziomie bez ruszania reszty kodu.
     if (h == 1 && w > 0) {
       int32_t scaledW = scaleLenX(w);
       uint16_t *scaledLine = (uint16_t *)malloc((size_t)scaledW * sizeof(uint16_t));
@@ -485,7 +502,7 @@ int backlightPercent = TFT_BACKLIGHT;
 #define TOUCH_CLK TFT_SCLK
 #endif
 
-// Kalibracja dotyku (dopasuj jeśli pozycje są przesunięte)
+// Kalibracja dotyku (dopasuj jeĹ›li pozycje sÄ… przesuniÄ™te)
 #define TOUCH_X_MIN 200
 #define TOUCH_X_MAX 3800
 #define TOUCH_Y_MIN 200
@@ -559,8 +576,8 @@ ScreenType screenOrder[SCREEN_PAGE_COUNT] = {
   SCREEN_ISS_PASS_TRACKING
 };
 ScreenType currentScreen = SCREEN_OFF;  // Ustawiany po wczytaniu preferencji
-bool inMenu = false;    // Czy jesteśmy w menu wewnętrznym strony
-int menuOption = 0;     // Aktualna opcja w menu (jeśli inMenu == true)
+bool inMenu = false;    // Czy jesteĹ›my w menu wewnÄ™trznym strony
+int menuOption = 0;     // Aktualna opcja w menu (jeĹ›li inMenu == true)
 const int DEFAULT_TFT_SWITCH_TIME_SEC = 30;
 bool tftAutoSwitchEnabled = false;
 int tftAutoSwitchTimeSec = DEFAULT_TFT_SWITCH_TIME_SEC;
@@ -571,13 +588,13 @@ const unsigned long SCREEN_UPDATE_INTERVAL = 100; // Aktualizuj ekran co 100ms
 const unsigned long DX_SCREEN_MIN_REDRAW_MS = 5000; // Ogranicz zapis tabeli DX do max 1 raz/5s
 
 // ========== WYGASZACZ EKRANU (Matrix) ==========
-const int DEFAULT_SCREEN_SAVER_TIMEOUT_MIN = 5;  // Domyślny czas w minutach
-bool screenSaverEnabled = false;                  // Czy wygaszacz włączony
+const int DEFAULT_SCREEN_SAVER_TIMEOUT_MIN = 5;  // DomyĹ›lny czas w minutach
+bool screenSaverEnabled = false;                  // Czy wygaszacz wĹ‚Ä…czony
 int screenSaverTimeoutMin = DEFAULT_SCREEN_SAVER_TIMEOUT_MIN;  // Czas w minutach
-unsigned long screenSaverLastActivityMs = 0;      // Ostatnia aktywność
-bool screenSaverActive = false;                   // Czy wygaszacz aktualnie działa
+unsigned long screenSaverLastActivityMs = 0;      // Ostatnia aktywnoĹ›Ä‡
+bool screenSaverActive = false;                   // Czy wygaszacz aktualnie dziaĹ‚a
 ScreenType screenSaverPrevScreen = SCREEN_OFF;    // Poprzedni ekran przed wygaszaczem
-bool screenSaverMenuActive = false;               // Czy jesteśmy w menu wygaszacza
+bool screenSaverMenuActive = false;               // Czy jesteĹ›my w menu wygaszacza
 unsigned long lastScreen1UpdateMs = 0;
 
 // Typy wygaszacza ekranu
@@ -587,17 +604,17 @@ enum ScreenSaverType {
   SAVER_MATRIX = 2          // Efekt Matrix
 };
 const char* SAVER_TYPE_NAMES[] = {"ANALOG", "DIGITAL", "MATRIX"};
-ScreenSaverType screenSaverType = SAVER_ANALOG_CLOCK;  // Domyślnie analogowy
+ScreenSaverType screenSaverType = SAVER_ANALOG_CLOCK;  // DomyĹ›lnie analogowy
 
-// ========== UŚPIENIE EKRANU ==========
-const int DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN = 5;  // Domyślny czas w minutach
-bool screenSleepEnabled = false;                  // Czy uśpienie włączone
+// ========== UĹšPIENIE EKRANU ==========
+const int DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN = 5;  // DomyĹ›lny czas w minutach
+bool screenSleepEnabled = false;                  // Czy uĹ›pienie wĹ‚Ä…czone
 int screenSleepTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN;  // Czas w minutach
-unsigned long screenSleepLastActivityMs = 0;      // Ostatnia aktywność
-bool screenSleepActive = false;                   // Czy uśpienie aktualnie działa
-bool screenSleepMenuActive = false;               // Czy jesteśmy w menu uśpienia
-ScreenType screenSleepPrevScreen = SCREEN_OFF;    // Poprzedni ekran przed uśpieniem
-int screenSleepMenuTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN; // Wartość w menu
+unsigned long screenSleepLastActivityMs = 0;      // Ostatnia aktywnoĹ›Ä‡
+bool screenSleepActive = false;                   // Czy uĹ›pienie aktualnie dziaĹ‚a
+bool screenSleepMenuActive = false;               // Czy jesteĹ›my w menu uĹ›pienia
+ScreenType screenSleepPrevScreen = SCREEN_OFF;    // Poprzedni ekran przed uĹ›pieniem
+int screenSleepMenuTimeoutMin = DEFAULT_SCREEN_SLEEP_TIMEOUT_MIN; // WartoĹ›Ä‡ w menu
 
 // ========== QRZ POPUP ==========
 bool qrzPopupActive = false;
@@ -703,7 +720,7 @@ static int getTableBottomForScreen(ScreenType screenNum) {
 
 extern uint16_t menuThemeColor;
 
-// Deklaracje zmiennych menu (definiowane później w kodzie)
+// Deklaracje zmiennych menu (definiowane pĂłĹşniej w kodzie)
 extern bool brightnessMenuActive;
 extern bool screenSaverMenuActive;
 extern bool screenSleepMenuActive;
@@ -711,11 +728,11 @@ extern bool touchCalActive;
 extern bool pskKeyboardActive;  // Klawiatura PSK aktywna
 
 static void drawSwitchScreenFooter() {
-  // Nie rysuj strzałek gdy jesteśmy w menu ustawień
+  // Nie rysuj strzaĹ‚ek gdy jesteĹ›my w menu ustawieĹ„
   if (inMenu || brightnessMenuActive || screenSaverMenuActive || screenSleepMenuActive || touchCalActive || pskKeyboardActive) {
     return;
   }
-  // Strzałki nawigacyjne - duże, blisko krawędzi (takie same na wszystkich ekranach)
+  // StrzaĹ‚ki nawigacyjne - duĹĽe, blisko krawÄ™dzi (takie same na wszystkich ekranach)
   int arrowY = 290;
   int arrowSize = 12;
   tft.fillTriangle(15, arrowY, 15 + arrowSize, arrowY - arrowSize, 15 + arrowSize, arrowY + arrowSize, menuThemeColor);
@@ -792,26 +809,26 @@ static const char* TR_PL[TR_KEY_COUNT] = {
   "Oczekiwanie na spoty...",
   "POGODA",
   "TEMPERATURA",
-  "WILGOTNOŚĆ",
-  "CIŚNIENIE",
+  "WILGOTNOĹšÄ†",
+  "CIĹšNIENIE",
   "WIATR",
   "Prognoza na 3 godziny:",
   "Prognoza na jutro:",
   "Brak danych",
-  "BŁĄD: ",
+  "BĹÄ„D: ",
   "Strona",
   "Przytrzymaj 5 sek = Kalibracja",
   "TFT Kalibracja",
-  "Obrót 90deg w prawo (rot90cw)",
-  "Obrót 90deg w lewo (rot90ccw)",
+  "ObrĂłt 90deg w prawo (rot90cw)",
+  "ObrĂłt 90deg w lewo (rot90ccw)",
   "USTAWIENIA TFT",
-  "JASNOŚĆ:",
+  "JASNOĹšÄ†:",
   "KOLOR MOTYWU:",
   "Przytrzymaj 3 sek = Kalibracja",
   "ZAPISZ",
-  "DOMYŚLNE",
+  "DOMYĹšLNE",
   "ZAMKNIJ",
-  "JĘZYK"
+  "JÄZYK"
 };
 
 static const char* TR_EN[TR_KEY_COUNT] = {
@@ -918,29 +935,29 @@ static uint16_t getAprsCallsignColorForEnlarged(const APRSStation &station) {
 }
 #endif
 
-// Funkcja zamieniająca polskie znaki na ASCII (dla wyświetlacza TFT)
+// Funkcja zamieniajÄ…ca polskie znaki na ASCII (dla wyĹ›wietlacza TFT)
 String toAsciiPolish(const String& input) {
   String output = input;
-  // Małe litery
-  output.replace("ą", "a");
-  output.replace("ć", "c");
-  output.replace("ę", "e");
-  output.replace("ł", "l");
-  output.replace("ń", "n");
-  output.replace("ó", "o");
-  output.replace("ś", "s");
-  output.replace("ź", "z");
-  output.replace("ż", "z");
-  // Duże litery
-  output.replace("Ą", "A");
-  output.replace("Ć", "C");
-  output.replace("Ę", "E");
-  output.replace("Ł", "L");
-  output.replace("Ń", "N");
-  output.replace("Ó", "O");
-  output.replace("Ś", "S");
-  output.replace("Ź", "Z");
-  output.replace("Ż", "Z");
+  // MaĹ‚e litery
+  output.replace("Ä…", "a");
+  output.replace("Ä‡", "c");
+  output.replace("Ä™", "e");
+  output.replace("Ĺ‚", "l");
+  output.replace("Ĺ„", "n");
+  output.replace("Ăł", "o");
+  output.replace("Ĺ›", "s");
+  output.replace("Ĺş", "z");
+  output.replace("ĹĽ", "z");
+  // DuĹĽe litery
+  output.replace("Ä„", "A");
+  output.replace("Ä†", "C");
+  output.replace("Ä", "E");
+  output.replace("Ĺ", "L");
+  output.replace("Ĺ", "N");
+  output.replace("Ă“", "O");
+  output.replace("Ĺš", "S");
+  output.replace("Ĺą", "Z");
+  output.replace("Ĺ»", "Z");
   return output;
 }
 
@@ -1045,8 +1062,8 @@ int touchCalNewYMax = TOUCH_Y_MAX;
 #define DEFAULT_HAMALERT_HOST "hamalert.org"
 #define DEFAULT_HAMALERT_PORT 7300
 #define NTP_SERVER "pool.ntp.org"
-#define MAX_SPOTS 50  // Bufor 50 ostatnich spotów
-#define MAX_POTA_SPOTS 30  // Bufor 30 ostatnich spotów (TFT pokaże max 10)
+#define MAX_SPOTS 50  // Bufor 50 ostatnich spotĂłw
+#define MAX_POTA_SPOTS 30  // Bufor 30 ostatnich spotĂłw (TFT pokaĹĽe max 10)
 #define GMT_OFFSET_SEC 0  // UTC
 #define DEFAULT_TIMEZONE_HOURS 1  // UTC+1 dla Polski (zimowy), DST doda +1 latem
 #define DEFAULT_CALLSIGN "SWL"
@@ -1056,9 +1073,9 @@ const unsigned long PROPAGATION_FETCH_INTERVAL_MS = 60UL * 60UL * 1000UL; // 60 
 const unsigned long PROPAGATION_FETCH_RETRY_MS = 5UL * 60UL * 1000UL;      // 5 min retry on error
 const unsigned long WEATHER_FETCH_INTERVAL_MS = 10UL * 60UL * 1000UL;      // 10 min
 const unsigned long WEATHER_FETCH_RETRY_MS = 2UL * 60UL * 1000UL;          // 2 min retry on error
-const unsigned long QRZ_LOOKUP_INTERVAL_DEFAULT_MS = 3000;                 // 3s bazowy interwał lookupów
-const unsigned long QRZ_LOOKUP_INTERVAL_DX_MS = 2000;                      // 2s na ekranie DX (tak samo jak POTA)
-const unsigned long QRZ_LOOKUP_INTERVAL_POTA_MS = 2000;                    // 2s na ekranie POTA
+const unsigned long QRZ_LOOKUP_INTERVAL_DEFAULT_MS = 6000;                 // byĹ‚o 3s - zbyt agresywne w poĹ‚Ä…czeniu z resztÄ… ruchu sieciowego na urzÄ…dzeniu
+const unsigned long QRZ_LOOKUP_INTERVAL_DX_MS = 4000;                      // byĹ‚o 2s
+const unsigned long QRZ_LOOKUP_INTERVAL_POTA_MS = 4000;                    // byĹ‚o 2s
 const unsigned long QRZ_RETRY_DELAY_MS = 5000;                             // 5s retry
 const unsigned long QRZ_CACHE_TTL_MS = 15UL * 60UL * 1000UL;               // 15 min cache wpisu
 const uint8_t QRZ_RETRY_LIMIT = 2;
@@ -1067,14 +1084,14 @@ const int QRZ_QUEUE_SIZE = 20;
 // ========== STRUKTURA DANYCH ==========
 struct DXSpot {
   String time;        // Czas UTC
-  String spotter;     // Stacja zgłaszająca
-  String callsign;    // Znak wywoławczy
-  float frequency;    // Częstotliwość (kHz - jak w DX Cluster)
+  String spotter;     // Stacja zgĹ‚aszajÄ…ca
+  String callsign;    // Znak wywoĹ‚awczy
+  float frequency;    // CzÄ™stotliwoĹ›Ä‡ (kHz - jak w DX Cluster)
   String comment;     // Komentarz
-  float distance;     // Odległość (km)
-  String country;     // Kraj (z QRZ, jeśli dostępny)
-  String name;        // Imię i nazwisko (z QRZ, jeśli dostępne)
-  String locator;     // Maidenhead Locator (jeśli dostępny)
+  float distance;     // OdlegĹ‚oĹ›Ä‡ (km)
+  String country;     // Kraj (z QRZ, jeĹ›li dostÄ™pny)
+  String name;        // ImiÄ™ i nazwisko (z QRZ, jeĹ›li dostÄ™pne)
+  String locator;     // Maidenhead Locator (jeĹ›li dostÄ™pny)
   float lat;          // Szerokosc geo (jesli znana)
   float lon;          // Dlugosc geo (jesli znana)
   bool hasLatLon;     // Czy lat/lon jest znane
@@ -1085,14 +1102,14 @@ struct DXSpot {
 // Struktura dla stacji APRS
 struct APRSStation {
   String time;        // Czas UTC (timestamp)
-  String callsign;    // Znak wywoławczy nadawcy
+  String callsign;    // Znak wywoĹ‚awczy nadawcy
   String symbol;      // Symbol APRS (raw)
   String symbolTable; // Table symbol (znak przed /)
-  float lat;          // Szerokość geograficzna
-  float lon;          // Długość geograficzna
+  float lat;          // SzerokoĹ›Ä‡ geograficzna
+  float lon;          // DĹ‚ugoĹ›Ä‡ geograficzna
   String comment;     // Komentarz
-  float freqMHz;      // Częstotliwość z komentarza (MHz)
-  float distance;     // Odległość w km (Haversine)
+  float freqMHz;      // CzÄ™stotliwoĹ›Ä‡ z komentarza (MHz)
+  float distance;     // OdlegĹ‚oĹ›Ä‡ w km (Haversine)
   bool hasLatLon;     // Czy pozycja jest znana
 };
 
@@ -1109,7 +1126,7 @@ struct AprsWxDecoded {
   bool hasPressure = false;
   float pressureHpa = 0.0f;
 
-  // Starszy ekran APRS weather używa tych nazw pól bezpośrednio.
+  // Starszy ekran APRS weather uĹĽywa tych nazw pĂłl bezpoĹ›rednio.
   int windDir = 0;
   float windSpeed = 0.0f;
   float temp = 0.0f;
@@ -1155,8 +1172,8 @@ struct WeatherData {
   int humidity = 0;
   int pressure = 0;
   float windMs = 0.0f;
-  float pm25 = 0.0f;  // PM2.5 w Âµg/mÂł
-  float pm10 = 0.0f;  // PM10 w Âµg/mÂł
+  float pm25 = 0.0f;  // PM2.5 w Ă‚Âµg/mĂ‚Ĺ‚
+  float pm10 = 0.0f;  // PM10 w Ă‚Âµg/mĂ‚Ĺ‚
   // Prognozy
   float forecast3hTempC = 0.0f;
   float forecast3hWindMs = 0.0f;
@@ -1194,7 +1211,7 @@ PendingQrzLookup qrzQueue[QRZ_QUEUE_SIZE];
 int qrzQueueLen = 0;
 unsigned long lastQrzLookupMs = 0;
 
-// Zwraca interwał dla kolejki QRZ zależnie od aktywnego ekranu
+// Zwraca interwaĹ‚ dla kolejki QRZ zaleĹĽnie od aktywnego ekranu
 unsigned long getQrzLookupIntervalMs() {
 #ifdef ENABLE_TFT_DISPLAY
   if (tftInitialized && !inMenu) {
@@ -1298,13 +1315,13 @@ static int getCachedTimezoneOffset() {
 String formatSpotUtc(String raw) {
   raw.trim();
 
-  // Obsługa ISO 8601 (np. 2024-12-12T12:34Z)
+  // ObsĹ‚uga ISO 8601 (np. 2024-12-12T12:34Z)
   int tPos = raw.indexOf('T');
   if (tPos >= 0 && (tPos + 5) <= (int)raw.length()) {
     raw = raw.substring(tPos + 1);
   }
 
-  // Usuń ewentualne końcowe "Z"
+  // UsuĹ„ ewentualne koĹ„cowe "Z"
   if (raw.endsWith("Z") || raw.endsWith("z")) {
     raw.remove(raw.length() - 1);
   }
@@ -1312,13 +1329,13 @@ String formatSpotUtc(String raw) {
   int hour = 0, minute = 0;
   bool parsed = false;
   
-  // Jeśli już jest dwukropek, przytnij do HH:MM
+  // JeĹ›li juĹĽ jest dwukropek, przytnij do HH:MM
   if (raw.length() >= 5 && raw.charAt(2) == ':') {
     hour = raw.substring(0, 2).toInt();
     minute = raw.substring(3, 5).toInt();
     parsed = true;
   } else if (raw.length() >= 4) {
-    // Brak dwukropka: spróbuj wstawić między HH a MM (np. "1234" -> "12:34")
+    // Brak dwukropka: sprĂłbuj wstawiÄ‡ miÄ™dzy HH a MM (np. "1234" -> "12:34")
     hour = raw.substring(0, 2).toInt();
     minute = raw.substring(2, 4).toInt();
     parsed = true;
@@ -1330,18 +1347,18 @@ String formatSpotUtc(String raw) {
   }
   
   if (!parsed) {
-    return raw; // Nie udało się sparsować
+    return raw; // Nie udaĹ‚o siÄ™ sparsowaÄ‡
   }
 
-  // Konwersja na czas lokalny (użyj cache'owanego offsetu)
+  // Konwersja na czas lokalny (uĹĽyj cache'owanego offsetu)
   int offset = getCachedTimezoneOffset();
   int localHour = hour + offset;
   
-  // Obsługa przejścia przez północ
+  // ObsĹ‚uga przejĹ›cia przez pĂłĹ‚noc
   if (localHour < 0) localHour += 24;
   else if (localHour >= 24) localHour -= 24;
   
-  // Formatuj wynik używając statycznego bufora (bez alokacji String)
+  // Formatuj wynik uĹĽywajÄ…c statycznego bufora (bez alokacji String)
   char result[6];
   snprintf(result, sizeof(result), "%02d:%02d", localHour, minute);
   return String(result);
@@ -1355,14 +1372,14 @@ unsigned long lastPotaApiFetchMs = 0;
 const unsigned long HAMALERT_FETCH_INTERVAL_MS = 60UL * 1000UL; // 60s
 unsigned long lastHamalertFetchMs = 0;
 
-// APRS-IS konfiguracja (domyślne wartości)
+// APRS-IS konfiguracja (domyĹ›lne wartoĹ›ci)
 #define DEFAULT_APRS_IS_HOST "rotate.aprs2.net"
 #define DEFAULT_APRS_IS_PORT 14580
 #define DEFAULT_APRS_CALLSIGN "nocall"
 #define DEFAULT_APRS_PASSCODE 00000
 #define DEFAULT_APRS_SSID 0
-#define DEFAULT_APRS_FILTER_RADIUS 50  // Promień w km (domyślnie 50, zakres 1-50)
-#define MAX_APRS_STATIONS 20  // Maksymalna liczba stacji do wyświetlenia (bufor dla WWW)
+#define DEFAULT_APRS_FILTER_RADIUS 50  // PromieĹ„ w km (domyĹ›lnie 50, zakres 1-50)
+#define MAX_APRS_STATIONS 20  // Maksymalna liczba stacji do wyĹ›wietlenia (bufor dla WWW)
 #define MAX_APRS_DISPLAY_LCD 11  // Maksymalna liczba stacji na ekranie LCD
 
 // Zmienne konfiguracyjne APRS-IS
@@ -1371,8 +1388,8 @@ int aprsIsPort = DEFAULT_APRS_IS_PORT;
 String aprsCallsign = DEFAULT_APRS_CALLSIGN;
 int aprsPasscode = DEFAULT_APRS_PASSCODE;
 int aprsSsid = DEFAULT_APRS_SSID;
-int aprsFilterRadius = DEFAULT_APRS_FILTER_RADIUS;  // PromieÄąâ€ž w km (0-30)
-// Uwaga: APRS uÄąÄ˝ywa wspÄ‚łÄąâ€šrzĂ„â„˘dnych z sekcji "Moja Stacja" (userLat, userLon)
+int aprsFilterRadius = DEFAULT_APRS_FILTER_RADIUS;  // PromieĂ„Ä…Ă˘â‚¬Ĺľ w km (0-30)
+// Uwaga: APRS uĂ„Ä…Ă„Ëťywa wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych z sekcji "Moja Stacja" (userLat, userLon)
 
 
 AprsWxDecoded currentWX;
@@ -1380,9 +1397,9 @@ String lastWxStation = "N/A";
 const unsigned long APRS_POSITION_FIRST_DELAY_MS = 60UL * 1000UL; // pierwszy beacon po 1 minucie
 const char* aprsServer = "rotate.aprs2.net";
 const int aprsPort = 14580;
-const char* aprsPass = "12345"; // TWÓJ PASSCODE
-const char* aprsFilter = "t/m/t/w"; // Filtruj tylko wiadomości i stacje pogodowe (WX)
-const int DEFAULT_APRS_INTERVAL_MIN = 29; // kolejne co 29 minut (domyślnie)
+const char* aprsPass = "12345"; // TWĂ“J PASSCODE
+const char* aprsFilter = "t/m/t/w"; // Filtruj tylko wiadomoĹ›ci i stacje pogodowe (WX)
+const int DEFAULT_APRS_INTERVAL_MIN = 29; // kolejne co 29 minut (domyĹ›lnie)
 const char *NVS_KEY_APRS_INTERVAL_MIN = "aprs_int_min";
 const int DEFAULT_APRS_ALERT_MIN_SEC = 300;
 const char *NVS_KEY_APRS_ALERT_MIN_SEC = "aprs_alrt_sec";
@@ -1454,21 +1471,21 @@ String aprsBuffer = "";
 const unsigned long APRS_INACTIVITY_RECONNECT_MS = 5UL * 60UL * 1000UL; // 5 minut
 
 void parseAPRSWeather(String line) {
-  // Szukamy początku danych pogodowych (znak '_')
+  // Szukamy poczÄ…tku danych pogodowych (znak '_')
   int wxIdx = line.indexOf('_');
   if (wxIdx == -1) return;
 
-  // Pobranie znaku stacji (na początku linii przed '>')
+  // Pobranie znaku stacji (na poczÄ…tku linii przed '>')
   int callEnd = line.indexOf('>');
   if (callEnd != -1) {
     lastWxStation = line.substring(0, callEnd);
   }
 
-  // Wycinanie danych (format APRS jest stały po znaku '_')
-  // Przykład: _MMDDHHmmcCCsSSgGGtTTThHHbBBBBB
+  // Wycinanie danych (format APRS jest staĹ‚y po znaku '_')
+  // PrzykĹ‚ad: _MMDDHHmmcCCsSSgGGtTTThHHbBBBBB
   String data = line.substring(wxIdx + 1);
 
-  // Kierunek i prędkość wiatru (c...s...)
+  // Kierunek i prÄ™dkoĹ›Ä‡ wiatru (c...s...)
   if (data.indexOf('c') != -1 && data.indexOf('s') != -1) {
     currentWX.windDir = data.substring(data.indexOf('c')+1, data.indexOf('c')+4).toInt();
     int miph = data.substring(data.indexOf('s')+1, data.indexOf('s')+4).toInt();
@@ -1482,13 +1499,13 @@ void parseAPRSWeather(String line) {
     currentWX.temp = (tempF - 32) * 5.0 / 9.0; // F -> C
   }
 
-  // Wilgotność (h...)
+  // WilgotnoĹ›Ä‡ (h...)
   int hIdx = data.indexOf('h');
   if (hIdx != -1) {
     currentWX.humidity = data.substring(hIdx + 1, hIdx + 3).toInt();
   }
 
-  // Ciśnienie (b...) - w dziesiątych hPa
+  // CiĹ›nienie (b...) - w dziesiÄ…tych hPa
   int bIdx = data.indexOf('b');
   if (bIdx != -1) {
     float baro = data.substring(bIdx + 1, bIdx + 6).toFloat();
@@ -1517,27 +1534,27 @@ void updateAPRS() {
   }
 }
 void drawWeatherScreen() {
-  tft.fillRect(0, 0, 480, 40, 0x03E0); // Ciemnozielony nagłówek
+  tft.fillRect(0, 0, 480, 40, 0x03E0); // Ciemnozielony nagĹ‚Ăłwek
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
   tft.drawCentreString("APRS WEATHER STATION", 240, 10, 1);
 
-  // 1. Temperatura (Duży odczyt)
+  // 1. Temperatura (DuĹĽy odczyt)
   tft.setTextSize(4);
   tft.setTextColor(currentWX.temp > 0 ? TFT_ORANGE : TFT_CYAN);
   String tStr = String(currentWX.temp, 1) + " C";
   tft.drawCentreString(tStr, 240, 70, 1);
 
-  // 2. Pozostałe parametry (Siatka 2x2)
+  // 2. PozostaĹ‚e parametry (Siatka 2x2)
   tft.setTextSize(2);
   tft.setTextColor(TFT_YELLOW);
   
-  // Wilgotność
+  // WilgotnoĹ›Ä‡
   tft.drawString("HUMIDITY:", 50, 240);
   tft.setTextColor(TFT_WHITE);
   tft.drawString(String(currentWX.humidity) + " %", 200, 240);
 
-  // Ciśnienie
+  // CiĹ›nienie
   tft.setTextColor(TFT_YELLOW);
   tft.drawString("BARO:", 280, 240);
   tft.setTextColor(TFT_WHITE);
@@ -1582,6 +1599,11 @@ String qrzUsername = "";
 String qrzPassword = "";
 String qrzStatus = "Callook.info: ready";
 String weatherApiKey = "";
+// Klucz API n2yo.com (opcjonalny) - jeĹ›li ustawiony, "nastÄ™pny przelot ISS"
+// jest pobierany z ich gotowego API do przewidywania przelotĂłw zamiast
+// liczony lokalnie przez SGP4 (duĹĽo prostsze i bardziej niezawodne niĹĽ
+// wĹ‚asne skanowanie orbity na ESP32). Rejestracja/klucz: https://www.n2yo.com/api/
+String n2yoApiKey = "";
 String openWebRxUrl = DEFAULT_OPENWEBRX_URL;
 uint16_t callsignColor = 65535; // Default white (0xFFFF)
 
@@ -1592,6 +1614,7 @@ double issLng = 0.0;
 double issAltitude = 0.0;
 double issSpeed = 0.0;
 String issCountry = "CZEKAJ...";
+String issCountryCode = "";
 double issDistance = 0.0;
 double issAzimuth = 0.0;
 double issElevation = 0.0;
@@ -1608,19 +1631,61 @@ double issTrajectoryLat[ISS_TRAJECTORY_POINTS] = {0};
 double issTrajectoryLng[ISS_TRAJECTORY_POINTS] = {0};
 const int issRMax = 120; // Max radius for ISS radar (5000 km scale)
 
+// Kierunek lotu (namiar) wyliczony z dwĂłch kolejnych PRAWDZIWYCH odczytĂłw
+// pozycji ISS - uĹĽywany do sensownej ekstrapolacji trajektorii w
+// calculateIssTrajectory(), zamiast zgadywanej, staĹ‚ej prÄ™dkoĹ›ci kÄ…towej.
+double issGroundBearingDeg = 0.0;
+bool issGroundBearingValid = false;
+
+// Szacowany czas nastÄ™pnego przelotu (epoch, sekundy) - patrz updateIssPassEstimate().
+// To jest PRZYBLIĹ»ENIE oparte na okresie orbitalnym ISS (~92.68 min), nie
+// peĹ‚ne wyznaczenie orbity (TLE/SGP4), wiÄ™c moĹĽe siÄ™ rĂłĹĽniÄ‡ od rzeczywistego
+// czasu o kilka-kilkanaĹ›cie minut.
+time_t issNextPassEstimateEpoch = 0;
+bool issNextPassEstimateValid = false;
+bool issWasInRangeLastCheck = false;
+
 // FreeRTOS task for ISS updates on Core 0
 TaskHandle_t issTaskHandle = NULL;
 SemaphoreHandle_t issDataMutex = NULL;
 
+// ===== TLE / SGP4 (prawdziwa mechanika orbitalna) =====
+// UĹĽywane do: (1) trajektorii ISS rysowanej na radarze, (2) przewidywania
+// czasu nastÄ™pnego przelotu. To ZASTÄPUJE poprzednie przybliĹĽenia
+// (namiar+prÄ™dkoĹ›Ä‡, model sinusoidalny) prawdziwÄ… propagacjÄ… orbity.
+Sgp4 issSat;
+bool issTleValid = false;
+unsigned long lastIssTleFetch = 0;
+const unsigned long ISS_TLE_REFRESH_MS = 6UL * 3600UL * 1000UL; // co 6h
+char issTleLine1[130] = {0};
+char issTleLine2[130] = {0};
+char issTleName[26] = "ISS (ZARYA)";
+SemaphoreHandle_t issTleMutex = NULL; // chroni issSat/issTleValid (Sgp4 nie jest thread-safe)
+
 // ISS task function - runs on Core 0
 void issTask(void *pvParameters) {
   Serial.println("[ISS TASK] Started on Core 0");
-  
+
+  // Poczekaj, zanim ISS zacznie cokolwiek pobieraÄ‡ z sieci - inne usĹ‚ugi
+  // uruchamiane przy starcie (DX Cluster, HamAlert, APRS-IS, POTA, pogoda)
+  // i tak potrzebujÄ… WiFi/gniazd/TLS w pierwszych sekundach po starcie;
+  // ISS dokĹ‚adajÄ…c siÄ™ do tego akurat w tym najbardziej zatĹ‚oczonym
+  // momencie zwiÄ™kszaĹ‚ ryzyko problemĂłw z pamiÄ™ciÄ…/gniazdami. ISS nie jest
+  // pilny (przelot i tak trwa kilka minut), wiÄ™c niech pobiera dane jako
+  // ostatni, gdy reszta juĹĽ siÄ™ ustatkuje.
+  Serial.println("[ISS TASK] Czekam 90s zanim zaczne pobierac dane (niech inne uslugi wystartuja pierwsze)...");
+  vTaskDelay(pdMS_TO_TICKS(90000));
+  Serial.println("[ISS TASK] Start pobierania danych ISS");
+
   while (true) {
     unsigned long now = millis();
     
-    // Fetch ISS data every 5 seconds
-    if (now - lastIssDataFetch > 5000 || lastIssDataFetch == 0) {
+    // Fetch ISS data every 30 seconds - HTTPS (n2yo / wheretheiss) allocuje
+    // ~20-30 KB TLS kontekst za kazdym razem; 5s interwal wyczerpywal
+    // pamiec ESP32 i powodowal crash (StoreProhibited 0x0).
+    // ISS leci ~7.66 km/s, 30s interwal to ~230 km - wystarczajaco
+    // czesto dla wyswietlania na mapie.
+    if (now - lastIssDataFetch > 30000 || lastIssDataFetch == 0) {
       // Take mutex before updating ISS data
       if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         fetchIssData();
@@ -1629,28 +1694,92 @@ void issTask(void *pvParameters) {
       }
     }
     
-    // Fetch country every 15 seconds
-    if (now - lastIssCountryCheck > 15000 || lastIssCountryCheck == 0) {
+    // Fetch country every ~30 seconds
+    // Sprawdzaj kraj co 30s - Nominatim to ciezki HTTPS (reverse geocode),
+    // przy 12s generowal zbyt duze obciazenie sieciowe i przyczynial sie
+    // do wyczerpania pamieci/pamieci TLS ESP32.
+    if (now - lastIssCountryCheck > 30000 || lastIssCountryCheck == 0) {
+      double snapLat = 0.0, snapLng = 0.0;
+      bool haveSnapshot = false;
       if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        getIssCountryFromCoords(issLat, issLng);
-        lastIssCountryCheck = millis();
+        snapLat = issLat;
+        snapLng = issLng;
+        haveSnapshot = true;
         xSemaphoreGive(issDataMutex);
       }
+
+      if (haveSnapshot) {
+        // The lookup itself (HTTPS request, up to ~3s) intentionally runs
+        // OUTSIDE the mutex and doesn't touch any shared state directly -
+        // previously the whole slow network call happened while holding
+        // issDataMutex, which also happened to coincide with the ESP32's
+        // single shared pool of WiFi sockets/TLS memory getting starved,
+        // causing OTHER unrelated HTTPS requests elsewhere in the sketch
+        // (weather, callook) to intermittently fail while this was busy.
+        String country = lookupIssCountryFromCoords(snapLat, snapLng);
+        // Pusty wynik = przejĹ›ciowe niepowodzenie (patrz komentarz w
+        // lookupIssCountryFromCoords) - NIE nadpisujemy w tym wypadku,
+        // ĹĽeby dobrze znana nazwa kraju nie znikaĹ‚a przy kaĹĽdej drobnej
+        // usterce sieciowej (to wĹ‚aĹ›nie powodowaĹ‚o "miganie").
+        if (country.length() > 0) {
+          if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            issCountry = country;
+            xSemaphoreGive(issDataMutex);
+          }
+        }
+      }
+      lastIssCountryCheck = millis();
     }
-    
+
+    // OdĹ›wieĹĽ TLE co ISS_TLE_REFRESH_MS (domyĹ›lnie co 6h), plus jednorazowo
+    // OdĹ›wieĹĽ TLE co ISS_TLE_REFRESH_MS (domyĹ›lnie co 6h) gdy juĹĽ je mamy,
+    // ale przy NIEUDANEJ prĂłbie ponawiaj duĹĽo szybciej (co 2 min) zamiast
+    // czekaÄ‡ kolejne 6h - wczeĹ›niej pojedyncze przejĹ›ciowe niepowodzenie
+    // (np. "[ISS TLE] HTTP kod: -1" widoczne w logu) blokowaĹ‚o TLE na 6h,
+    // co skutkowaĹ‚o brakiem danych o kolejnym przelocie przez caĹ‚y ten czas.
+    const unsigned long tleRetryMs = 2UL * 60UL * 1000UL;
+    unsigned long tleInterval = issTleValid ? ISS_TLE_REFRESH_MS : tleRetryMs;
+    if (lastIssTleFetch == 0 || now - lastIssTleFetch > tleInterval) {
+      lastIssTleFetch = millis(); // ustaw PRZED prĂłbÄ…, ĹĽeby nieudane pobranie
+                                   // (np. brak WiFi na starcie) nie zapÄ™tliĹ‚o
+                                   // ciÄ…gĹ‚ych prĂłb co 100ms
+      bool tleOk = fetchIssTLE();
+      if (!tleOk) {
+        Serial.println("[ISS TLE] Niepowodzenie - ponowna proba za 2 minuty");
+      }
+    }
+
+    // Przewidywanie nastÄ™pnego przelotu. JeĹ›li skonfigurowano klucz n2yo.com
+    // (w ustawieniach WWW), uĹĽywamy ich API - prostsze, bardziej niezawodne,
+    // nie obciÄ…ĹĽa ESP32 wĹ‚asnym skanowaniem SGP4. Bez klucza - zapasowo
+    // liczymy to sami lokalnie (skanowanie do przodu co 30s w oknie 6h, co
+    // jest wyraĹşnie droĹĽsze niĹĽ pojedyncza propagacja, wiÄ™c robimy to rzadko).
+    static unsigned long lastIssPassEstimate = 0;
+    if (lastIssPassEstimate == 0 || now - lastIssPassEstimate > 5UL * 60UL * 1000UL) {
+      lastIssPassEstimate = millis();
+      if (n2yoApiKey.length() > 0) {
+        if (!fetchIssNextPassFromN2yo()) {
+          Serial.println("[ISS PASS] n2yo nieudane, probuje lokalnego SGP4 jako zapasowego");
+          if (issTleValid) updateIssNextPassEstimate();
+        }
+      } else if (issTleValid) {
+        updateIssNextPassEstimate();
+      }
+    }
+
     // Yield to other tasks
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
-// Konfiguracja filtrÄ‚łw CC-Cluster (dxspots.com)
-bool clusterNoAnnouncements = true;      // set/noann - wyłącz ogłoszenia
-bool clusterNoWWV = true;                // set/nowwv - wyłącz WWV
-bool clusterNoWCY = true;                // set/nowcy - wyłącz WCY
-bool clusterUseFilters = false;           // Czy używać filtrów (set/filter)
-String clusterFilterCommands = "";        // Dodatkowe komendy filtrÄ‚łw (np. "set/filter k,ve/pass")
+// Konfiguracja filtrĂ„â€šĹ‚w CC-Cluster (dxspots.com)
+bool clusterNoAnnouncements = true;      // set/noann - wyĹ‚Ä…cz ogĹ‚oszenia
+bool clusterNoWWV = true;                // set/nowwv - wyĹ‚Ä…cz WWV
+bool clusterNoWCY = true;                // set/nowcy - wyĹ‚Ä…cz WCY
+bool clusterUseFilters = false;           // Czy uĹĽywaÄ‡ filtrĂłw (set/filter)
+String clusterFilterCommands = "";        // Dodatkowe komendy filtrĂ„â€šĹ‚w (np. "set/filter k,ve/pass")
 
-// Status poÄąâ€šĂ„â€¦czenia
+// Status poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia
 bool wifiConnected = false;
 bool telnetConnected = false;
 unsigned long lastTelnetAttempt = 0;
@@ -1670,38 +1799,38 @@ unsigned long rgbBlueAprsAlertUntilMs = 0;
 unsigned long rgbBlueAprsLastToggleMs = 0;
 bool rgbBlueAprsStateOn = false;
 
-// ========== KONFIGURACJA PŁYTKI TP4056 I AKUMULATORA 18650 ==========
-// Płytka ładowania 5V 1A z modułem TP4056 i ochroną baterii 18650
-// - Wejście: 5V (micro USB/USB-C)
-// - Wyjście: 4.2V (bateria naładowana) lub 5V (zasilanie zewnętrzne)
-// - Pomiar napięcia przez dzielnik 100k/100k na pin ADC
+// ========== KONFIGURACJA PĹYTKI TP4056 I AKUMULATORA 18650 ==========
+// PĹ‚ytka Ĺ‚adowania 5V 1A z moduĹ‚em TP4056 i ochronÄ… baterii 18650
+// - WejĹ›cie: 5V (micro USB/USB-C)
+// - WyjĹ›cie: 4.2V (bateria naĹ‚adowana) lub 5V (zasilanie zewnÄ™trzne)
+// - Pomiar napiÄ™cia przez dzielnik 100k/100k na pin ADC
 
-#define BATTERY_MONITORING_ENABLED  // Włącz pomiar napięcia baterii
-#define BATTERY_ADC_PIN 34          // Pin ADC1_CH6 (GPIO34) - pomiar napięcia baterii
-#define BATTERY_ADC_RESOLUTION 12   // Rozdzielczość ADC (12 bit = 0-4095)
-#define BATTERY_VOLTAGE_DIVIDER 2.0f // Dzielnik napięcia 100k/100k (1:2)
-#define BATTERY_ADC_VREF 3.3f       // Napięcie referencyjne ADC (3.3V)
+#define BATTERY_MONITORING_ENABLED  // WĹ‚Ä…cz pomiar napiÄ™cia baterii
+#define BATTERY_ADC_PIN 34          // Pin ADC1_CH6 (GPIO34) - pomiar napiÄ™cia baterii
+#define BATTERY_ADC_RESOLUTION 12   // RozdzielczoĹ›Ä‡ ADC (12 bit = 0-4095)
+#define BATTERY_VOLTAGE_DIVIDER 2.0f // Dzielnik napiÄ™cia 100k/100k (1:2)
+#define BATTERY_ADC_VREF 3.3f       // NapiÄ™cie referencyjne ADC (3.3V)
 
-// Zakresy napięcia akumulatora 18650 (dla płytki z ochroną DW01A)
-#define BATTERY_VOLTAGE_MAX 4.2f      // 100% naładowana
+// Zakresy napiÄ™cia akumulatora 18650 (dla pĹ‚ytki z ochronÄ… DW01A)
+#define BATTERY_VOLTAGE_MAX 4.2f      // 100% naĹ‚adowana
 #define BATTERY_VOLTAGE_NOM 3.8f    // 50% nominalna
-#define BATTERY_VOLTAGE_LOW 3.6f    // 25% niski poziom (pomarańczowy)
+#define BATTERY_VOLTAGE_LOW 3.6f    // 25% niski poziom (pomaraĹ„czowy)
 #define BATTERY_VOLTAGE_MIN 3.4f    // 0% krytyczny (czerwony)
-#define BATTERY_VOLTAGE_CUTOFF 3.4f // 0% ochrona wyłącza
+#define BATTERY_VOLTAGE_CUTOFF 3.4f // 0% ochrona wyĹ‚Ä…cza
 
-// Interwały pomiaru i ostrzegania
-#define BATTERY_CHECK_INTERVAL_MS 1000UL   // Sprawdzaj co 1 sekundę
+// InterwaĹ‚y pomiaru i ostrzegania
+#define BATTERY_CHECK_INTERVAL_MS 1000UL   // Sprawdzaj co 1 sekundÄ™
 #define BATTERY_WARN_INTERVAL_MS 60000UL   // Ostrzegaj co 60 sekund przy niskim poziomie
 
 unsigned long lastBatteryCheckMs = 0;
 float batteryVoltage = 0.0f;
 int batteryPercentage = 0;
 bool batteryLowWarningShown = false;
-bool batteryCharging = false;  // Rozpoznawanie ładowania (napięcie > 4.25V)
+bool batteryCharging = false;  // Rozpoznawanie Ĺ‚adowania (napiÄ™cie > 4.25V)
 
-// Funkcja odczytu napięcia baterii z ADC
+// Funkcja odczytu napiÄ™cia baterii z ADC
 float readBatteryVoltage() {
-  // Dokładniejszy odczyt - średnia z 8 próbek
+  // DokĹ‚adniejszy odczyt - Ĺ›rednia z 8 prĂłbek
   long adcSum = 0;
   const int samples = 8;
   for (int i = 0; i < samples; i++) {
@@ -1713,17 +1842,17 @@ float readBatteryVoltage() {
   return voltageAtPin * BATTERY_VOLTAGE_DIVIDER;
 }
 
-// Funkcja obliczania procentu naładowania (liniowe mapowanie: 4.2V=100%, 3.8V=50%, 3.4V=0%)
+// Funkcja obliczania procentu naĹ‚adowania (liniowe mapowanie: 4.2V=100%, 3.8V=50%, 3.4V=0%)
 int calculateBatteryPercentage(float voltage) {
   if (voltage >= BATTERY_VOLTAGE_MAX) return 100;
   if (voltage <= BATTERY_VOLTAGE_MIN) return 0;
-  // Liniowe mapowanie między 3.4V (0%) a 4.2V (100%)
+  // Liniowe mapowanie miÄ™dzy 3.4V (0%) a 4.2V (100%)
   // 3.8V = 50%
   float percentage = ((voltage - BATTERY_VOLTAGE_MIN) / (BATTERY_VOLTAGE_MAX - BATTERY_VOLTAGE_MIN)) * 100.0f;
   return (int)percentage;
 }
 
-// Sprawdź stan baterii i zwróć true jeśli była aktualizacja
+// SprawdĹş stan baterii i zwrĂłÄ‡ true jeĹ›li byĹ‚a aktualizacja
 bool updateBatteryStatus() {
   unsigned long now = millis();
   if (now - lastBatteryCheckMs < BATTERY_CHECK_INTERVAL_MS) {
@@ -1734,21 +1863,21 @@ bool updateBatteryStatus() {
   batteryVoltage = readBatteryVoltage();
   batteryPercentage = calculateBatteryPercentage(batteryVoltage);
   
-  // Wykrywanie ładowania (napięcie > 4.25V wskazuje na podłączone 5V)
+  // Wykrywanie Ĺ‚adowania (napiÄ™cie > 4.25V wskazuje na podĹ‚Ä…czone 5V)
   batteryCharging = (batteryVoltage > 4.25f);
   
   return true;
 }
 
-// Zwraca kolor dla poziomu baterii (do wyświetlania na TFT)
+// Zwraca kolor dla poziomu baterii (do wyĹ›wietlania na TFT)
 uint16_t getBatteryColor() {
-  if (batteryCharging) return 0x07E0;  // Zielony podczas ładowania
+  if (batteryCharging) return 0x07E0;  // Zielony podczas Ĺ‚adowania
   if (batteryVoltage <= BATTERY_VOLTAGE_MIN) return TFT_RED;
-  if (batteryVoltage <= BATTERY_VOLTAGE_LOW) return 0xFDA0;  // Pomarańczowy
+  if (batteryVoltage <= BATTERY_VOLTAGE_LOW) return 0xFDA0;  // PomaraĹ„czowy
   return 0x07E0;  // Zielony
 }
 
-// Funkcja rysująca ikonę baterii na TFT
+// Funkcja rysujÄ…ca ikonÄ™ baterii na TFT
 void drawBatteryIcon(int x, int y, int w, int h) {
   if (!tftInitialized) return;
   
@@ -1760,27 +1889,27 @@ void drawBatteryIcon(int x, int y, int w, int h) {
   // Plusik (kontakt) baterii
   tft.fillRect(x + w, y + h/4, 3, h/2, TFT_WHITE);
   
-  // Wypełnienie poziomem naładowania
+  // WypeĹ‚nienie poziomem naĹ‚adowania
   int fillW = (w - 4) * level / 100;
   if (fillW < 0) fillW = 0;
   if (fillW > w - 4) fillW = w - 4;
   
   tft.fillRect(x + 2, y + 2, fillW, h - 4, color);
-  // Wyczyść pozostałą część (gdy poziom spada)
+  // WyczyĹ›Ä‡ pozostaĹ‚Ä… czÄ™Ĺ›Ä‡ (gdy poziom spada)
   tft.fillRect(x + 2 + fillW, y + 2, (w - 4) - fillW, h - 4, TFT_BLACK);
 }
 
-// Funkcja wyświetlająca status baterii na ekranie (w nagłówku)
+// Funkcja wyĹ›wietlajÄ…ca status baterii na ekranie (w nagĹ‚Ăłwku)
 void drawBatteryStatus(int x, int y) {
   if (!tftInitialized) return;
   
   // Aktualizuj stan baterii
   updateBatteryStatus();
   
-  // Rysuj ikonę baterii (30x16 pikseli)
+  // Rysuj ikonÄ™ baterii (30x16 pikseli)
   drawBatteryIcon(x, y, 30, 14);
   
-  // Tekst z procentami i napięciem
+  // Tekst z procentami i napiÄ™ciem
   tft.setTextSize(1);
   tft.setTextColor(TFT_WHITE);
   char buf[16];
@@ -1788,31 +1917,31 @@ void drawBatteryStatus(int x, int y) {
   tft.setCursor(x + 36, y + 4);
   tft.print(buf);
   
-  // Indykator ładowania
+  // Indykator Ĺ‚adowania
   if (batteryCharging) {
     tft.setTextColor(0x07E0);  // Zielony
     tft.setCursor(x + 36, y - 8);
-    tft.print("[ładowanie]");
+    tft.print("[Ĺ‚adowanie]");
   }
 }
 
-// Szybka aktualizacja tylko ikony baterii (bez odświeżania całego nagłówka)
-// Używana w loop() aby uniknąć watchdog resetu
+// Szybka aktualizacja tylko ikony baterii (bez odĹ›wieĹĽania caĹ‚ego nagĹ‚Ăłwka)
+// UĹĽywana w loop() aby uniknÄ…Ä‡ watchdog resetu
 void drawBatteryQuickUpdate(bool skipScreenCheck = false) {
   if (!tftInitialized) return;
   if (!skipScreenCheck && (currentScreen != SCREEN_HAM_CLOCK || inMenu)) return;
   if (brightnessMenuActive || screenSaverMenuActive) return;  // Nie rysuj podczas menu
   
-  // Sprawdź czy dzielnik jest podłączony
+  // SprawdĹş czy dzielnik jest podĹ‚Ä…czony
   if (batteryVoltage < 1.5f || batteryVoltage > 5.0f) return;
   
   int screenW = tft.width();
   int x = screenW - 120, y = 10, w = 26, h = 12;  // Prawa strona ekranu (bardziej w lewo)
   
-  // Wyczyść obszar ikony baterii przed narysowaniem (unika pasków/śmieci)
+  // WyczyĹ›Ä‡ obszar ikony baterii przed narysowaniem (unika paskĂłw/Ĺ›mieci)
   tft.fillRect(x - 2, y - 2, w + 6, h + 4, TFT_BLACK);
   
-  // Rysuj ikonę baterii
+  // Rysuj ikonÄ™ baterii
   uint16_t color = getBatteryColor();
   int level = batteryPercentage;
   
@@ -1826,8 +1955,8 @@ void drawBatteryQuickUpdate(bool skipScreenCheck = false) {
   tft.fillRect(x + 2, y + 2, fillW, h - 4, color);
   tft.fillRect(x + 2 + fillW, y + 2, (w - 4) - fillW, h - 4, TFT_BLACK);
   
-  // Tekst z procentem baterii - wyczyść tło przed napisaniem
-  tft.fillRect(x + 32, y + 3, 30, 8, TFT_BLACK);  // Wyczyść obszar tekstu
+  // Tekst z procentem baterii - wyczyĹ›Ä‡ tĹ‚o przed napisaniem
+  tft.fillRect(x + 32, y + 3, 30, 8, TFT_BLACK);  // WyczyĹ›Ä‡ obszar tekstu
   tft.setTextSize(1);
   tft.setTextColor(TFT_WHITE);
   char batBuf[16];
@@ -1867,7 +1996,7 @@ String potaTelnetBuffer = "";
 String pendingPotaLine = "";
 unsigned long pendingPotaDropped = 0;
 
-// QRZ cache (żeby nie pytać w kółko o te same znaki)
+// QRZ cache (ĹĽeby nie pytaÄ‡ w kĂłĹ‚ko o te same znaki)
 struct QrzCacheEntry {
   String callsign;
   String grid;
@@ -1959,7 +2088,7 @@ void initTFT() {
                 "ILI9488",
                 TFT_SCLK, TFT_MOSI, TFT_MISO, TFT_CS, TFT_DC, TFT_RST, TFT_BL_PIN);
   
-  // Podświetlenie ustawiamy jawnie, żeby łatwo odróżnić problem BL od problemu SPI/drivera.
+  // PodĹ›wietlenie ustawiamy jawnie, ĹĽeby Ĺ‚atwo odrĂłĹĽniÄ‡ problem BL od problemu SPI/drivera.
   setupBacklightPwm();
   setBacklightPercent(backlightPercent);
   Serial.println("TFT begin()...");
@@ -1968,7 +2097,7 @@ void initTFT() {
   
   applyTftRotation();
   applyTftInversion();
-  // Dla rotacji 1: szerokości 480, wysokości 320
+  // Dla rotacji 1: szerokoĹ›ci 480, wysokoĹ›ci 320
   tft.fillScreen(TFT_WHITE);
 
   // Inicjalizacja dotyku (XPT2046, osobny SPI)
@@ -1982,7 +2111,7 @@ void initTFT() {
   
   Serial.println("=== TFT zainicjalizowany OK ===");
   
-  // Wyświetl ekran startowy (boot log)
+  // WyĹ›wietl ekran startowy (boot log)
   drawBootScreen();
   tftBootPrintLine("=== Inicjalizacja TFT ===");
   tftBootPrintLine("TFT begin()...");
@@ -2027,7 +2156,7 @@ void drawWelcomeScreenYellow() {
   const int lineGap = 30;
   String lines[] = {
     "ESP32-HAM-CLOCK",
-    "version 1.3",
+    "version 1.4",
     "Original: SP3KON",
     "Modified by: SP9TNV",
     "License: MIT",
@@ -2042,23 +2171,7 @@ void drawWelcomeScreenYellow() {
   }
 }
 
-void drawWelcomeScreenGreen() {
-  if (!tftInitialized) {
-    return;
-  }
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_GREEN);
-  tft.setTextSize(3);
-  const int centerX = 240;
-  const int startY = 140;
-  String line = "FOLLOW THE PROPAGATION...";
-  int textWidth = tft.textWidth(line);
-  int x = centerX - (textWidth / 2);
-  tft.setCursor(x, startY);
-  tft.print(line);
-}
-
-// Ekran startowy z grafiką SP9TNV
+// Ekran startowy z grafikÄ… SP9TNV
 void drawSplashScreen() {
   if (!tftInitialized) {
     return;
@@ -2068,7 +2181,7 @@ void drawSplashScreen() {
   
   const int centerX = 240;
   
-  // Spróbuj załadować plik BMP z różnych lokalizacji
+  // SprĂłbuj zaĹ‚adowaÄ‡ plik BMP z rĂłĹĽnych lokalizacji
   String splashPath = "";
   bool bmpLoaded = false;
   if (littleFsReady) {
@@ -2082,7 +2195,7 @@ void drawSplashScreen() {
     
     if (splashPath != "") {
       Serial.println("[Splash] Loading: " + splashPath);
-      // Wyczyść obszar obrazu przed załadowaniem (na wypadek gdyby BMP miał inne wymiary)
+      // WyczyĹ›Ä‡ obszar obrazu przed zaĹ‚adowaniem (na wypadek gdyby BMP miaĹ‚ inne wymiary)
       tft.fillRect(0, 0, 480, 320, TFT_BLACK);
       bmpLoaded = drawBmpFromFS(splashPath.c_str(), 0, 0);
       if (bmpLoaded) {
@@ -2101,14 +2214,14 @@ void drawSplashScreen() {
     tft.fillScreen(TFT_BLACK);
   }
   
-  // Tekst "Kliknij aby kontynuować"
+  // Tekst "Kliknij aby kontynuowaÄ‡"
   tft.setTextSize(1);
   tft.setTextColor(TFT_LIGHTGREY);
   tft.setCursor(centerX - 80, 310);
   tft.print("Kliknij ekran aby kontynuowac...");
 }
 
-// Aktualizuj wyÄąâ€şwietlacz z aktualnym adresem IP
+// Aktualizuj wyĂ„Ä…Ă˘â‚¬Ĺźwietlacz z aktualnym adresem IP
 void updateTFT_IP() {
   if (!tftInitialized) {
     return;
@@ -2117,7 +2230,7 @@ void updateTFT_IP() {
   IPAddress ip;
   String modeStr = "";
   
-  // SprawdÄąĹź czy jesteÄąâ€şmy w trybie STA czy AP
+  // SprawdĂ„Ä…ÄąĹş czy jesteĂ„Ä…Ă˘â‚¬Ĺźmy w trybie STA czy AP
   if (wifiConnected && WiFi.status() == WL_CONNECTED) {
     ip = WiFi.localIP();
     modeStr = "WiFi";
@@ -2125,7 +2238,7 @@ void updateTFT_IP() {
     ip = WiFi.softAPIP();
     modeStr = "AP Mode";
   } else {
-    // Brak IP - wyświetl komunikat
+    // Brak IP - wyĹ›wietl komunikat
     tft.fillRect(10, 40, 300, 20, TFT_WHITE);
     tft.setTextColor(TFT_RED, TFT_WHITE);
     tft.setTextSize(1);
@@ -2134,22 +2247,22 @@ void updateTFT_IP() {
     return;
   }
   
-  // WyczyÄąâ€şĂ„â€ˇ obszar IP (dla rotacji 1: szerokoÄąâ€şĂ„â€ˇ 480)
+  // WyczyĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ obszar IP (dla rotacji 1: szerokoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ 480)
   tft.fillRect(10, 40, 300, 20, TFT_BLACK);
   
-  // WyÄąâ€şwietl tryb i IP w jednej linii (oszczędność miejsca)
+  // WyĂ„Ä…Ă˘â‚¬Ĺźwietl tryb i IP w jednej linii (oszczÄ™dnoĹ›Ä‡ miejsca)
   tft.setTextColor(TFT_BLACK, TFT_WHITE);
   tft.setTextSize(1);
   tft.setCursor(10, 45);
   tft.print(modeStr);
   tft.print(": ");
   
-  // Wyświetl IP
+  // WyĹ›wietl IP
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
   tft.print(ip.toString());
 }
 
-// Aktualizuj wyÄąâ€şwietlacz z tabelą spotów (podobnie jak na stronie WWW)
+// Aktualizuj wyĂ„Ä…Ă˘â‚¬Ĺźwietlacz z tabelÄ… spotĂłw (podobnie jak na stronie WWW)
 void updateTFT_Spots() {
   static unsigned long lastTFTPrint = 0;
   static int tftCallCount = 0;
@@ -2159,10 +2272,10 @@ void updateTFT_Spots() {
     return;
   }
   
-  // Print co 10 wywołań (dla debugowania)
+  // Print co 10 wywoĹ‚aĹ„ (dla debugowania)
   unsigned long now = millis();
   if (now - lastTFTPrint > 10000) { // Co 10 sekund
-    Serial.print("[TFT] updateTFT_Spots wywoÄąâ€šane ");
+    Serial.print("[TFT] updateTFT_Spots wywoĂ„Ä…Ă˘â‚¬Ĺˇane ");
     Serial.print(tftCallCount);
     Serial.print(" razy, spotCount=");
     Serial.println(spotCount);
@@ -2170,16 +2283,16 @@ void updateTFT_Spots() {
     tftCallCount = 0;
   }
   
-  // WyczyÄąâ€şĂ„â€ˇ obszar tabeli (zostaw nagÄąâ€šÄ‚łwek i IP)
-  // Dla rotacji 1 (krajobraz): szerokoÄąâ€şĂ„â€ˇ 480, wysokoÄąâ€şĂ„â€ˇ 320
-  // Zostaw miejsce na nagÄąâ€šÄ‚łwek (0-45) i tabelĂ„â„˘ (65-320)
+  // WyczyĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ obszar tabeli (zostaw nagĂ„Ä…Ă˘â‚¬ĹˇĂ„â€šĹ‚wek i IP)
+  // Dla rotacji 1 (krajobraz): szerokoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ 480, wysokoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ 320
+  // Zostaw miejsce na nagĂ„Ä…Ă˘â‚¬ĹˇĂ„â€šĹ‚wek (0-45) i tabelÄ‚â€žĂ˘â€žË (65-320)
   tft.fillRect(0, 65, 480, 175, TFT_WHITE);
   
-  // WyÄąâ€şwietl nagÄąâ€šÄ‚łwek tabeli
+  // WyĂ„Ä…Ă˘â‚¬Ĺźwietl nagĂ„Ä…Ă˘â‚¬ĹˇĂ„â€šĹ‚wek tabeli
   tft.setTextColor(TFT_BLACK, TFT_WHITE);
   tft.setTextSize(1);
   
-  // Nagłówki kolumn (dla szerokoÄąâ€şci 480px)
+  // NagĹ‚Ăłwki kolumn (dla szerokoĂ„Ä…Ă˘â‚¬Ĺźci 480px)
   int yPos = 65;
   tft.setCursor(5, yPos);
   tft.print(tr(TR_TIME_SHORT));
@@ -2194,13 +2307,13 @@ void updateTFT_Spots() {
   
   yPos += 15;
   
-  // Wyświetl maksymalnie 10 spotÄ‚łw na wyÄąâ€şwietlaczu TFT (ÄąÄ˝eby zmieścić się na ekranie)
+  // WyĹ›wietl maksymalnie 10 spotĂ„â€šĹ‚w na wyĂ„Ä…Ă˘â‚¬Ĺźwietlaczu TFT (Ă„Ä…Ă„Ëťeby zmieĹ›ciÄ‡ siÄ™ na ekranie)
   int maxDisplaySpots = min(spotCount, 10);
   
   for (int i = 0; i < maxDisplaySpots; i++) {
-    if (yPos >= 230) break; // Nie wchodź poza ekran
+    if (yPos >= 230) break; // Nie wchodĹş poza ekran
     
-    // Znak wywoławczy - rozmiar 2 (większy)
+    // Znak wywoĹ‚awczy - rozmiar 2 (wiÄ™kszy)
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextSize(2);
     tft.setCursor(5, yPos);
@@ -2209,7 +2322,7 @@ void updateTFT_Spots() {
     if (callStr.length() > 8) callStr = callStr.substring(0, 8);
     tft.print(callStr);
     
-    // Częstotliwość (MHz) - rozmiar 2
+    // CzÄ™stotliwoĹ›Ä‡ (MHz) - rozmiar 2
     tft.setTextColor(TFT_YELLOW, TFT_BLACK);
     tft.setCursor(140, yPos);
     float freqMHz = spots[i].frequency / 1000.0;
@@ -2238,7 +2351,7 @@ void updateTFT_Spots() {
     yPos += 20;
   }
   
-  // Jeśli brak spotów, wyświetl komunikat
+  // JeĹ›li brak spotĂłw, wyĹ›wietl komunikat
   if (spotCount == 0) {
     tft.setTextColor(TFT_RED, TFT_WHITE);
     tft.setTextSize(1);
@@ -2247,12 +2360,12 @@ void updateTFT_Spots() {
   }
 }
 
-// ========== SYSTEM MENU I EKRANÄ‚â€śW ==========
+// ========== SYSTEM MENU I EKRANĂ„â€šĂ˘â‚¬Ĺ›W ==========
 
 extern TaskHandle_t uiTaskHandle;
 static void requestUiScreenRedraw(uint8_t pendingScreenId);
 
-// GÄąâ€šÄ‚łwna funkcja rysujĂ„â€¦ca ekrany
+// GĂ„Ä…Ă˘â‚¬ĹˇĂ„â€šĹ‚wna funkcja rysujÄ‚â€žĂ˘â‚¬Â¦ca ekrany
 void drawScreen(ScreenType screenNum) {
   if (!tftInitialized) {
     return;
@@ -2356,7 +2469,7 @@ void applyMenuThemeFromHue() {
 // Definicja koloru "Radio Orange" - dynamiczny motyw
 #define TFT_RADIO_ORANGE menuThemeColor
 
-// Kolory i tÄąâ€šo "Matrix" dla ekranu 10
+// Kolory i tĂ„Ä…Ă˘â‚¬Ĺˇo "Matrix" dla ekranu 10
 #define MATRIX_DARKGREEN 0x0480
 #define MATRIX_BRIGHTGREEN 0x07E0
 #define MATRIX_WHITEGREEN 0xAFE5
@@ -2390,7 +2503,7 @@ struct MatrixDrop {
 const int SCREEN10_WIDTH = 480;
 const int SCREEN10_HEIGHT = 320;
 const int MATRIX_COL_SPACING = 7;
-const int numDrops = SCREEN10_WIDTH / MATRIX_COL_SPACING; // Tyle kolumn, ile się mieści
+const int numDrops = SCREEN10_WIDTH / MATRIX_COL_SPACING; // Tyle kolumn, ile siÄ™ mieĹ›ci
 const char MATRIX_HEAD_TEXT[] = "ESP32   HAM   CLOCK   by   SP3KON";
 const int MATRIX_HEAD_TEXT_LEN = (int)(sizeof(MATRIX_HEAD_TEXT) - 1);
 MatrixDrop drops[numDrops];
@@ -2416,7 +2529,7 @@ static inline char getMatrixHeadCharForColumn(int columnIdx) {
 }
 
 const int SCREEN10_HEADER_H = 0;
-const int SCREEN10_BODY_TOP = 0;  // Pełny ekran matrix
+const int SCREEN10_BODY_TOP = 0;  // PeĹ‚ny ekran matrix
 const int SCREEN10_BODY_BOTTOM = 320;
 const int SCREEN10_BODY_H = SCREEN10_BODY_BOTTOM - SCREEN10_BODY_TOP;
 const int CLOCK_TEXT_SIZE = 6;
@@ -2437,15 +2550,15 @@ int clockMaskH = 0;
 String lastClockText = "";
 bool clockNeedsRedraw = true;
 
-// ========== WYGASZACZ Z PORUSZAJĄCYM SIĘ ZEGAREM ==========
-float bounceClockX = 240;  // Pozycja X zegara (środek ekranu)
-float bounceClockY = 160;  // Pozycja Y zegara (środek ekranu)
-float bounceClockVX = 2.5; // Prędkość X (piksele na klatkę)
-float bounceClockVY = 2.0; // Prędkość Y
+// ========== WYGASZACZ Z PORUSZAJÄ„CYM SIÄ ZEGAREM ==========
+float bounceClockX = 240;  // Pozycja X zegara (Ĺ›rodek ekranu)
+float bounceClockY = 160;  // Pozycja Y zegara (Ĺ›rodek ekranu)
+float bounceClockVX = 2.5; // PrÄ™dkoĹ›Ä‡ X (piksele na klatkÄ™)
+float bounceClockVY = 2.0; // PrÄ™dkoĹ›Ä‡ Y
 const int BOUNCE_CLOCK_TEXT_SIZE = 4;  // Rozmiar tekstu zegara
-const int BOUNCE_CLOCK_CHAR_W = 6 * BOUNCE_CLOCK_TEXT_SIZE;  // Szerokość znaku
-const int BOUNCE_CLOCK_CHAR_H = 8 * BOUNCE_CLOCK_TEXT_SIZE;   // Wysokość znaku
-int bounceClockW = 0;  // Szerokość tekstu zegara (obliczana dynamicznie)
+const int BOUNCE_CLOCK_CHAR_W = 6 * BOUNCE_CLOCK_TEXT_SIZE;  // SzerokoĹ›Ä‡ znaku
+const int BOUNCE_CLOCK_CHAR_H = 8 * BOUNCE_CLOCK_TEXT_SIZE;   // WysokoĹ›Ä‡ znaku
+int bounceClockW = 0;  // SzerokoĹ›Ä‡ tekstu zegara (obliczana dynamicznie)
 int bounceClockH = BOUNCE_CLOCK_CHAR_H;
 uint16_t bounceClockColor = TFT_RADIO_ORANGE;
 unsigned long lastBounceClockUpdateMs = 0;
@@ -2500,24 +2613,24 @@ String getUtcTimeString() {
   return "--:--:--";
 }
 
-// Sprawdza czy obowiązuje czas letni w Europie (ostatnia niedziela marca - ostatnia niedziela października)
+// Sprawdza czy obowiÄ…zuje czas letni w Europie (ostatnia niedziela marca - ostatnia niedziela paĹşdziernika)
 bool isEuropeanDST(struct tm *timeinfo) {
   int month = timeinfo->tm_mon + 1;  // 1-12
   int day = timeinfo->tm_mday;       // 1-31
   int wday = timeinfo->tm_wday;      // 0=niedziela
   
-  // Styczeń, luty, listopad, grudzień - zima
+  // StyczeĹ„, luty, listopad, grudzieĹ„ - zima
   if (month < 3 || month > 10) return false;
-  // Kwiecień-wrzesień - lato
+  // KwiecieĹ„-wrzesieĹ„ - lato
   if (month > 3 && month < 10) return true;
   
-  // Marzec - sprawdź ostatnią niedzielę
+  // Marzec - sprawdĹş ostatniÄ… niedzielÄ™
   if (month == 3) {
     int lastSunday = 31 - ((31 - day + wday) % 7);
     return day > lastSunday || (day == lastSunday && timeinfo->tm_hour >= 1);
   }
   
-  // Październik - sprawdź ostatnią niedzielę
+  // PaĹşdziernik - sprawdĹş ostatniÄ… niedzielÄ™
   if (month == 10) {
     int lastSunday = 31 - ((31 - day + wday) % 7);
     return day < lastSunday || (day == lastSunday && timeinfo->tm_hour < 1);
@@ -2531,7 +2644,7 @@ bool getTimeWithTimezone(struct tm *outTm) {
   if (now < 100000) {
     return false;
   }
-  // Pobierz czas UTC aby sprawdzić DST
+  // Pobierz czas UTC aby sprawdziÄ‡ DST
   struct tm utcTm;
   gmtime_r(&now, &utcTm);
   int dstOffset = isEuropeanDST(&utcTm) ? 1 : 0;  // +1h w czasie letnim
@@ -2583,24 +2696,24 @@ String sanitizePolishToAscii(const String &input) {
     }
     uint8_t c2 = (uint8_t)s[i + 1];
     // UTF-8 Polish letters
-    if (c == 0xC4 && c2 == 0x84) { out += 'a'; i++; continue; } // Ą
-    if (c == 0xC4 && c2 == 0x85) { out += 'a'; i++; continue; } // Ą
-    if (c == 0xC4 && c2 == 0x86) { out += 'c'; i++; continue; } // Ć
-    if (c == 0xC4 && c2 == 0x87) { out += 'c'; i++; continue; } // Ć
-    if (c == 0xC4 && c2 == 0x98) { out += 'e'; i++; continue; } // Ę
-    if (c == 0xC4 && c2 == 0x99) { out += 'e'; i++; continue; } // Ę
-    if (c == 0xC5 && c2 == 0x81) { out += 'l'; i++; continue; } // Ł
-    if (c == 0xC5 && c2 == 0x82) { out += 'l'; i++; continue; } // ł
-    if (c == 0xC5 && c2 == 0x83) { out += 'n'; i++; continue; } // Ń
-    if (c == 0xC5 && c2 == 0x84) { out += 'n'; i++; continue; } // ń
-    if (c == 0xC3 && c2 == 0x93) { out += 'o'; i++; continue; } // Ó
-    if (c == 0xC3 && c2 == 0xB3) { out += 'o'; i++; continue; } // ó
-    if (c == 0xC5 && c2 == 0x9A) { out += 'S'; i++; continue; } // Ś
-    if (c == 0xC5 && c2 == 0x9B) { out += 's'; i++; continue; } // ś
-    if (c == 0xC5 && c2 == 0xB9) { out += 'z'; i++; continue; } // Ź
-    if (c == 0xC5 && c2 == 0xBA) { out += 'z'; i++; continue; } // ź
-    if (c == 0xC5 && c2 == 0xBB) { out += 'z'; i++; continue; } // Ż
-    if (c == 0xC5 && c2 == 0xBC) { out += 'z'; i++; continue; } // ż
+    if (c == 0xC4 && c2 == 0x84) { out += 'a'; i++; continue; } // Ä„
+    if (c == 0xC4 && c2 == 0x85) { out += 'a'; i++; continue; } // Ä„
+    if (c == 0xC4 && c2 == 0x86) { out += 'c'; i++; continue; } // Ä†
+    if (c == 0xC4 && c2 == 0x87) { out += 'c'; i++; continue; } // Ä†
+    if (c == 0xC4 && c2 == 0x98) { out += 'e'; i++; continue; } // Ä
+    if (c == 0xC4 && c2 == 0x99) { out += 'e'; i++; continue; } // Ä
+    if (c == 0xC5 && c2 == 0x81) { out += 'l'; i++; continue; } // Ĺ
+    if (c == 0xC5 && c2 == 0x82) { out += 'l'; i++; continue; } // Ĺ‚
+    if (c == 0xC5 && c2 == 0x83) { out += 'n'; i++; continue; } // Ĺ
+    if (c == 0xC5 && c2 == 0x84) { out += 'n'; i++; continue; } // Ĺ„
+    if (c == 0xC3 && c2 == 0x93) { out += 'o'; i++; continue; } // Ă“
+    if (c == 0xC3 && c2 == 0xB3) { out += 'o'; i++; continue; } // Ăł
+    if (c == 0xC5 && c2 == 0x9A) { out += 'S'; i++; continue; } // Ĺš
+    if (c == 0xC5 && c2 == 0x9B) { out += 's'; i++; continue; } // Ĺ›
+    if (c == 0xC5 && c2 == 0xB9) { out += 'z'; i++; continue; } // Ĺą
+    if (c == 0xC5 && c2 == 0xBA) { out += 'z'; i++; continue; } // Ĺş
+    if (c == 0xC5 && c2 == 0xBB) { out += 'z'; i++; continue; } // Ĺ»
+    if (c == 0xC5 && c2 == 0xBC) { out += 'z'; i++; continue; } // ĹĽ
     // Unknown multibyte - skip
   }
   return out;
@@ -2686,119 +2799,119 @@ String getEnglishDateStringFullWithTimezone() {
   return full;
 }
 
-// Funkcja zwracająca imieniny dla danego dnia (polskie imieniny)
+// Funkcja zwracajÄ…ca imieniny dla danego dnia (polskie imieniny)
 String getPolishNameDay() {
   struct tm timeinfo;
   if (!getTimeWithTimezone(&timeinfo)) {
     return "";
   }
   
-  // Tablica imienin dla każdego dnia roku (miesiąc 0-11, dzień 1-31)
-  // Styczeń
+  // Tablica imienin dla kaĹĽdego dnia roku (miesiÄ…c 0-11, dzieĹ„ 1-31)
+  // StyczeĹ„
   static const char* nameDays[12][31] = {
-    {"Mieszko, Mieczysław", "Izydor, Grzegorz", "Danuta, Genowefa", "Angelika, Aniela", "Edward, Szymon",
+    {"Mieszko, MieczysĹ‚aw", "Izydor, Grzegorz", "Danuta, Genowefa", "Angelika, Aniela", "Edward, Szymon",
      "Kacper, Melchior, Baltazar", "Lucjan, Julian", "Seweryn, Marcin", "Marcelina, Julianna", "Danuta, Piotr",
-     "Agata, Małgorzata", "Arkadiusz, Benedykt", "Bogumiła, Wojciech", "Feliks, Nina", "Paweł, Arnold",
-     "Marcel, Włodzimierz", "Antoni, Jan", "Małgorzata, Piotr", "Henryk, Marta", "Fabian, Sebastian",
-     "Agnieszka, Jarosław", "Anastazy, Wincenty", "Ildefons, Rajmund", "Felicja, Tymoteusz", "Paweł, Michał",
-     "Paula, Wanda", "Aniela, Jerzy", "Walery, Karol", "Franciszek, Józef", "Maciej, Martyna",
+     "Agata, MaĹ‚gorzata", "Arkadiusz, Benedykt", "BogumiĹ‚a, Wojciech", "Feliks, Nina", "PaweĹ‚, Arnold",
+     "Marcel, WĹ‚odzimierz", "Antoni, Jan", "MaĹ‚gorzata, Piotr", "Henryk, Marta", "Fabian, Sebastian",
+     "Agnieszka, JarosĹ‚aw", "Anastazy, Wincenty", "Ildefons, Rajmund", "Felicja, Tymoteusz", "PaweĹ‚, MichaĹ‚",
+     "Paula, Wanda", "Aniela, Jerzy", "Walery, Karol", "Franciszek, JĂłzef", "Maciej, Martyna",
      "Joanna, Marceli"
     },
     // Luty
-    {"Brygida, Ignacy", "Maria, Mirosław", "Błażej, Oskar", "Andrzej, Józef", "Agata, Jakub",
-     "Dorota, Paweł", "Ryszard, Teodor", "Hieronim, Sebastian", "Apolonia, Cyryl", "Elwira, Scholastyka",
-     "Lucjan, Olgierd", "Eulalia, Radosław", "Grzegorz, Leszek", "Krystyna, Liliana", "Jowita, Faustyn",
+    {"Brygida, Ignacy", "Maria, MirosĹ‚aw", "BĹ‚aĹĽej, Oskar", "Andrzej, JĂłzef", "Agata, Jakub",
+     "Dorota, PaweĹ‚", "Ryszard, Teodor", "Hieronim, Sebastian", "Apolonia, Cyryl", "Elwira, Scholastyka",
+     "Lucjan, Olgierd", "Eulalia, RadosĹ‚aw", "Grzegorz, Leszek", "Krystyna, Liliana", "Jowita, Faustyn",
      "Danuta, Juliana", "Aleksy, Zbigniew", "Szymon, Konstancja", "Arnold, Konrad", "Leon, Ludomir",
-     "Eleonora, Feliks", "Marta, Małgorzata", "Roman, Damian", "Maciej, Marek", "Cezary, Donat",
-     "Michał, Tytus", "Aleksander, Gabriel", "Antoni, Romuald", "Baltazar, Kochany", "Marta, Geralda"
+     "Eleonora, Feliks", "Marta, MaĹ‚gorzata", "Roman, Damian", "Maciej, Marek", "Cezary, Donat",
+     "MichaĹ‚, Tytus", "Aleksander, Gabriel", "Antoni, Romuald", "Baltazar, Kochany", "Marta, Geralda"
     },
     // Marzec
     {"Albina, Antonina", "Helena, Halszka", "Tomasz, Maryna", "Lucja, Kazimierz", "Adrian, Adriana",
-     "Róża, Eugeniusz", "Tomasz, Felicyta", "Beatrycze, Wincenty", "Franciszka, Brunon", "Cyprian, Aleksander",
-     "Ludwik, Konstantyn", "Grzegorz, Alojzy", "Bożena, Patrycja", "Matylda, Lazarz", "Longin, Klemens",
-     "Izabela, Oktawia", "Patryk, Zbigniew", "Cyryl, Edward", "Józef, Bogdan", "Klaudia, Eufemia",
-     "Lubomir, Benedykt", "Katarzyna, Bogusław", "Pelagia, Oktawian", "Gabriel, Marek", "Mariola, Więnczysław",
+     "RĂłĹĽa, Eugeniusz", "Tomasz, Felicyta", "Beatrycze, Wincenty", "Franciszka, Brunon", "Cyprian, Aleksander",
+     "Ludwik, Konstantyn", "Grzegorz, Alojzy", "BoĹĽena, Patrycja", "Matylda, Lazarz", "Longin, Klemens",
+     "Izabela, Oktawia", "Patryk, Zbigniew", "Cyryl, Edward", "JĂłzef, Bogdan", "Klaudia, Eufemia",
+     "Lubomir, Benedykt", "Katarzyna, BogusĹ‚aw", "Pelagia, Oktawian", "Gabriel, Marek", "Mariola, WiÄ™nczysĹ‚aw",
      "Teodor, Olga", "Ernest, Lidia", "Aniela, Sykstus", "Wiktoryna, Jan", "Amelia, Dobromierz",
      "Beniamin, Leon"
     },
-    // Kwiecień
-    {"Grażyna, Teodor", "Władysław, Franciszek", "Ryszard, Pankracy", "Izydor, Wojciech", "Katarzyna, Irena",
-     "Izabela, Wilhelm", "Rufin, Celestyn", "Juliusz, Dionizy", "Maria, Dymitr", "Michał, Makary",
-     "Filip, Leon", "Juliusz, Lubosław", "Przemysław, Hermenegild", "Berenika, Tiburcy", "Wiktoryn, Anastazja",
-     "Ksenia, Erwin", "Aniceta, Robert", "Alicja, Bogusław", "Waleriana, Tytus", "Czesław, Agnieszka",
-     "Anselm, Jarosław", "Kaja, Leon", "Jerzy, Wojciech", "Grzegorz, Paweł", "Erwina, Marek",
+    // KwiecieĹ„
+    {"GraĹĽyna, Teodor", "WĹ‚adysĹ‚aw, Franciszek", "Ryszard, Pankracy", "Izydor, Wojciech", "Katarzyna, Irena",
+     "Izabela, Wilhelm", "Rufin, Celestyn", "Juliusz, Dionizy", "Maria, Dymitr", "MichaĹ‚, Makary",
+     "Filip, Leon", "Juliusz, LubosĹ‚aw", "PrzemysĹ‚aw, Hermenegild", "Berenika, Tiburcy", "Wiktoryn, Anastazja",
+     "Ksenia, Erwin", "Aniceta, Robert", "Alicja, BogusĹ‚aw", "Waleriana, Tytus", "CzesĹ‚aw, Agnieszka",
+     "Anselm, JarosĹ‚aw", "Kaja, Leon", "Jerzy, Wojciech", "Grzegorz, PaweĹ‚", "Erwina, Marek",
      "Marzena, Klaudiusz", "Zygmunt, Florian", "Piotr, Waleria", "Rita, Bogna", "Katarzyna, Marian",
-     "Lidia, Trzebomysł"
+     "Lidia, TrzebomysĹ‚"
     },
     // Maj
-    {"Józef, Jeremiasz", "Zygmunt, Anatolia", "Maria, Mariola", "Monika, Florian", "Włodzimierz, Iryda",
-     "Judyta, Filip", "Benedykt, Gizela", "Stanisław, Lizbona",     "Łukasz, Bożena", "Antonin, Izydor",
+    {"JĂłzef, Jeremiasz", "Zygmunt, Anatolia", "Maria, Mariola", "Monika, Florian", "WĹ‚odzimierz, Iryda",
+     "Judyta, Filip", "Benedykt, Gizela", "StanisĹ‚aw, Lizbona",     "Ĺukasz, BoĹĽena", "Antonin, Izydor",
      "Iga, Maja", "Joanna, Pankracy", "Glora, Roberta", "Maciej, Bonifacy", "Zofia, Izydora",
-     "Jędrzej, Jędrzej", "Brunon, Sławomir", "Aleksandra, Eryk", "Iwa, Piotr", "Bernard, Aleksandra",
-     "Jerzy, Jan", "Wiktoria, Julia", "Emilia, Michał", "Joanna, Zuzanna", "Grzegorz, Małgorzata",
-     "Filip, Paulina", "Augustyn, Julian", "Jaromir, Justyna", "Magdalena, Zdisława", "Ferdynand, Karolina",
+     "JÄ™drzej, JÄ™drzej", "Brunon, SĹ‚awomir", "Aleksandra, Eryk", "Iwa, Piotr", "Bernard, Aleksandra",
+     "Jerzy, Jan", "Wiktoria, Julia", "Emilia, MichaĹ‚", "Joanna, Zuzanna", "Grzegorz, MaĹ‚gorzata",
+     "Filip, Paulina", "Augustyn, Julian", "Jaromir, Justyna", "Magdalena, ZdisĹ‚awa", "Ferdynand, Karolina",
      "Aniela, Petronela"
     },
     // Czerwiec
     {"Justyn, Konrad", "Erazm, Marzenna", "Leszek, Tamara", "Katarzyna, Franciszek", "Walter, Bonifacy",
-     "Natalia, Saba", "Antoni, Robert", "Maksym, Seweryn", "Feliks, Pelagia", "Bogdan, Małgorzata",
-     "Barnaba, Radomił", "Janina, Jan", "Antoni, Lucylla", "Eliza, Walenty", "Witold, Jolanta",
-     "Alina, Benon", "Albert, Ignacy", "Marek, Elżbieta", "Gerwazy, Protazy", "Dina, Bogna",
-     "Alicja, Alojzy", "Paulina, Tomasz", "Wanda, Zenon", "Jan, Danuta", "Władysław, Dorota",
-     "Piotr, Paweł", "Maryla, Władysława", "Leon, Ireneusz", "Piotr, Paweł", "Emilia, Lucyna",
+     "Natalia, Saba", "Antoni, Robert", "Maksym, Seweryn", "Feliks, Pelagia", "Bogdan, MaĹ‚gorzata",
+     "Barnaba, RadomiĹ‚", "Janina, Jan", "Antoni, Lucylla", "Eliza, Walenty", "Witold, Jolanta",
+     "Alina, Benon", "Albert, Ignacy", "Marek, ElĹĽbieta", "Gerwazy, Protazy", "Dina, Bogna",
+     "Alicja, Alojzy", "Paulina, Tomasz", "Wanda, Zenon", "Jan, Danuta", "WĹ‚adysĹ‚aw, Dorota",
+     "Piotr, PaweĹ‚", "Maryla, WĹ‚adysĹ‚awa", "Leon, Ireneusz", "Piotr, PaweĹ‚", "Emilia, Lucyna",
      "Oktawia, Oktawian"
     },
     // Lipiec
-    {"Halina, Marian", "Jagoda, Maria", "Anatol, Tomasz", "Elżbieta, Odon", "Antoni, Maria",
-     "Dominika, Gotard", "Cyryl, Metody", "Edgar, Elżbieta", "Łucjan, Weronika", "Sylwia, Witalis",
+    {"Halina, Marian", "Jagoda, Maria", "Anatol, Tomasz", "ElĹĽbieta, Odon", "Antoni, Maria",
+     "Dominika, Gotard", "Cyryl, Metody", "Edgar, ElĹĽbieta", "Ĺucjan, Weronika", "Sylwia, Witalis",
      "Olga, Kalina", "Jan, Brunon", "Henryk, Kinga", "Bonawentura, Kamil", "Dawid, Henryk",
-     "Eustachy, Maria", "Aneta, Bogdan", "Emil, Erwin", "Wincenty, Wodzisław", "Czesław, Eliasz",
-     "Piotr, Wiktor", "Magdalena, Władysława", "Ilona, Stefan", "Kinga, Krystyna", "Walentyna, Krzysztof",
-     "Anna, Mirosława", "Aurelia, Malwina", "Lilia, Innocenty", "Olaf, Marta", "Julita, Ludmiła",
+     "Eustachy, Maria", "Aneta, Bogdan", "Emil, Erwin", "Wincenty, WodzisĹ‚aw", "CzesĹ‚aw, Eliasz",
+     "Piotr, Wiktor", "Magdalena, WĹ‚adysĹ‚awa", "Ilona, Stefan", "Kinga, Krystyna", "Walentyna, Krzysztof",
+     "Anna, MirosĹ‚awa", "Aurelia, Malwina", "Lilia, Innocenty", "Olaf, Marta", "Julita, LudmiĹ‚a",
      "Ignacy, Lubomir"
     },
-    // Sierpień
+    // SierpieĹ„
     {"Nadzieja, Piotr", "Karina, Gustaw", "Lidia, Nikodem", "Dominik, Protus", "Emil, Karol",
-     "Sławomir, Jan", "Kajetan, Albert", "Cyprian, Emiliana", "Roman, Ryszard", "Borys, Wawrzyniec",
+     "SĹ‚awomir, Jan", "Kajetan, Albert", "Cyprian, Emiliana", "Roman, Ryszard", "Borys, Wawrzyniec",
      "Klara, Zuzanna", "Lech, Euzebiusz", "Hildegarda, Diana", "Alfred, Euzebiusz", "Maria, Napoleon",
-     "Roch, Stefan", "Anita, Eliza", "Klara, Helena",     "Jan, Bolesław", "Bernard, Samuel",
-     "Joanna, Franciszek", "Maria, Cezary", "Róża, Apolinary", "Jerzy, Bartosz", "Luiza, Ludwik",
-     "Maria, Zefiryn", "Józef, Klaudiusz", "Patrycja, Wyszomir", "Beata, Jan", "Róża, Szczęsny",
+     "Roch, Stefan", "Anita, Eliza", "Klara, Helena",     "Jan, BolesĹ‚aw", "Bernard, Samuel",
+     "Joanna, Franciszek", "Maria, Cezary", "RĂłĹĽa, Apolinary", "Jerzy, Bartosz", "Luiza, Ludwik",
+     "Maria, Zefiryn", "JĂłzef, Klaudiusz", "Patrycja, Wyszomir", "Beata, Jan", "RĂłĹĽa, SzczÄ™sny",
      "Ramona, Rajmund"
     },
-    // Wrzesień
-    {"Ida, Bronisław", "Stefan, Wilhelm", "Grzegorz, Izabela", "Ida, Julian", "Dorota, Wawrzyniec",
-     "Beata, Eugeniusz", "Regina, Melchior", "Mariam, Adriana", "Piotr, Sergiusz", "Elżbieta, Gordian",
+    // WrzesieĹ„
+    {"Ida, BronisĹ‚aw", "Stefan, Wilhelm", "Grzegorz, Izabela", "Ida, Julian", "Dorota, Wawrzyniec",
+     "Beata, Eugeniusz", "Regina, Melchior", "Mariam, Adriana", "Piotr, Sergiusz", "ElĹĽbieta, Gordian",
      "Jacek, Protus", "Gwido, Maria", "Eugenia, Aureliusz", "Bernard, Roksana", "Albin, Nikodem",
-     "Edyta, Kornel", "Franciszek, Hildegarda", "Irma, Stanisław", "Jan, Konstancja", "Filipina, Eustachy",
-     "Jonasz, Mateusz", "Tomasz, Maurycy", "Tekla, Bogusław", "Gerard, Herman", "Aurelia, Ladysław",
-     "Władysław, Ewa", "Damian, Kosma", "Wacław, Laurencjusz", "Michał, Rafał, Gabriela", "Hieronim, Remigiusz"
+     "Edyta, Kornel", "Franciszek, Hildegarda", "Irma, StanisĹ‚aw", "Jan, Konstancja", "Filipina, Eustachy",
+     "Jonasz, Mateusz", "Tomasz, Maurycy", "Tekla, BogusĹ‚aw", "Gerard, Herman", "Aurelia, LadysĹ‚aw",
+     "WĹ‚adysĹ‚aw, Ewa", "Damian, Kosma", "WacĹ‚aw, Laurencjusz", "MichaĹ‚, RafaĹ‚, Gabriela", "Hieronim, Remigiusz"
     },
-    // Październik
+    // PaĹşdziernik
     {"Danuta, Remigiusz", "Teofil, Dionizy", "Teresa, Heliodor", "Edwin, Franciszek", "Igor, Placyd",
      "Artur, Brunon", "Maria, Marek", "Pelagia, Brygida", "Arnold, Dionizy", "Paulina, Franciszek",
-     "Emil, Aldona", "Maksymilian, Eustachy", "Edward, Gerald", "Łukasz, Manfred", "Teresa, Jadwiga",
-     "Gall, Florian", "Ignacy, Rudolfa", "Łukasz, Julian", "Ziemowit, Jadwiga", "Irena, Jan",
-     "Urszula, Hilaria", "Filip, Marek", "Marlena, Seweryn", "Rafał, Marcin", "Beata, Daria",
-     "Łucjan, Ewaryst", "Iwona, Sabina", "Szymon, Juda", "Euzebia, Wioletta", "Zenobia, Przemysław",
+     "Emil, Aldona", "Maksymilian, Eustachy", "Edward, Gerald", "Ĺukasz, Manfred", "Teresa, Jadwiga",
+     "Gall, Florian", "Ignacy, Rudolfa", "Ĺukasz, Julian", "Ziemowit, Jadwiga", "Irena, Jan",
+     "Urszula, Hilaria", "Filip, Marek", "Marlena, Seweryn", "RafaĹ‚, Marcin", "Beata, Daria",
+     "Ĺucjan, Ewaryst", "Iwona, Sabina", "Szymon, Juda", "Euzebia, Wioletta", "Zenobia, PrzemysĹ‚aw",
      "Urbain, Saturnin"
     },
     // Listopad
-    {"Seweryn, Wiktoryna", "Bohdan, Bożydar", "Sylwia, Marcin", "Karol, Wiktor", "Elżbieta, Zachariasz",
+    {"Seweryn, Wiktoryna", "Bohdan, BoĹĽydar", "Sylwia, Marcin", "Karol, Wiktor", "ElĹĽbieta, Zachariasz",
      "Feliks, Leonard", "Antoni, Ernest", "Seweryn, Bogdan", "Aleksander, Ludwik", "Lena, Marcin",
-     "Szczęsny, Leon", "Marcin, Witold", "Mikołaj, Stanisław", "Emilian, Wawrzyniec", "Albert, Leopold",
-     "Gertruda, Edmund", "Grzegorz, Salomea", "Klaudyna, Karolina", "Elżbieta, Seweryn", "Anatol, Rafał",
+     "SzczÄ™sny, Leon", "Marcin, Witold", "MikoĹ‚aj, StanisĹ‚aw", "Emilian, Wawrzyniec", "Albert, Leopold",
+     "Gertruda, Edmund", "Grzegorz, Salomea", "Klaudyna, Karolina", "ElĹĽbieta, Seweryn", "Anatol, RafaĹ‚",
      "Albertina, Janusz", "Cecylia, Felicyta", "Adela, Klemens", "Flora, Emma", "Katarzyna, Erazm",
-     "Delfina, Sylwester", "Wirgiliusz, Walery", "Jakub, Zdzisław", "Fryderyk, Zygmunt", "Andrzej, Seweryn",
+     "Delfina, Sylwester", "Wirgiliusz, Walery", "Jakub, ZdzisĹ‚aw", "Fryderyk, Zygmunt", "Andrzej, Seweryn",
      ""
     },
-    // Grudzień
+    // GrudzieĹ„
     {"Eligiusz, Natalia", "Bibiana, Balbina", "Franciszek, Ksawery", "Barbara, Krystian", "Norbert, Wawrzyniec",
-     "Jadwiga, Jan", "Marcin, Ambroży", "Maria, Świętosława", "Wiesław, Leokadia", "Daniel, Bogdan",
-     "Damaszek, Waldemar", "Dagmara, Aleksandra", "Łucja, Otylia", "Alfred, Izydor", "Nina, Celina",
-     "Albina, Olimpia", "Lazarz, Florian", "Gracjan, Bogusław", "Michał, Dariusz", "Bogumiła, Dominik",
-     "Tomisław, Honorata", "Zenon, Honorata", "Wiktor, Seweryn", "Ewa, Adam", "Anastazja, Eugenia",
-     "Dionizy, Szczepan", "Jan, Zenobiusz", "Teofila, Godzisław", "Marta, Tomasz", "Rainer, Eugeniusz",
+     "Jadwiga, Jan", "Marcin, AmbroĹĽy", "Maria, ĹšwiÄ™tosĹ‚awa", "WiesĹ‚aw, Leokadia", "Daniel, Bogdan",
+     "Damaszek, Waldemar", "Dagmara, Aleksandra", "Ĺucja, Otylia", "Alfred, Izydor", "Nina, Celina",
+     "Albina, Olimpia", "Lazarz, Florian", "Gracjan, BogusĹ‚aw", "MichaĹ‚, Dariusz", "BogumiĹ‚a, Dominik",
+     "TomisĹ‚aw, Honorata", "Zenon, Honorata", "Wiktor, Seweryn", "Ewa, Adam", "Anastazja, Eugenia",
+     "Dionizy, Szczepan", "Jan, Zenobiusz", "Teofila, GodzisĹ‚aw", "Marta, Tomasz", "Rainer, Eugeniusz",
      "Sylwester, Melania"
     }
   };
@@ -2815,16 +2928,16 @@ String getPolishNameDay() {
   return "";
 }
 
-// Rysuje linię daty/tygodnia wyśrodkowaną - zaktualizowana dla 480x320
+// Rysuje liniÄ™ daty/tygodnia wyĹ›rodkowanÄ… - zaktualizowana dla 480x320
 void drawDateLine(const String &dateText) {
   const int screenW = 480;
   const int timeY = 130;  // Taka sama jak w drawHamClock
   const int dateY = timeY + 84;  // Taka sama jak w drawHamClock
 
-  // Czyść obszar daty (szeroki prostokąt na całej szerokości)
+  // CzyĹ›Ä‡ obszar daty (szeroki prostokÄ…t na caĹ‚ej szerokoĹ›ci)
   tft.fillRect(30, dateY - 2, 420, 24, TFT_BLACK);
   
-  // Rysuj datę wyśrodkowaną - POWIĘKSZONA (TextSize 3 jak w drawHamClock)
+  // Rysuj datÄ™ wyĹ›rodkowanÄ… - POWIÄKSZONA (TextSize 3 jak w drawHamClock)
   tft.setTextSize(3);
   tft.setTextColor(TFT_WHITE);
   int dateWidth = dateText.length() * 18; // ~18px na znak przy TextSize 3
@@ -2833,11 +2946,11 @@ void drawDateLine(const String &dateText) {
   tft.print(dateText);
 }
 
-// Funkcja rysująca paski sygnału WiFi (belki jak w telefonie)
-// x, y - pozycja lewego górnego rogu
-// strength - siła sygnału 0-4 (0=brak, 4=max)
+// Funkcja rysujÄ…ca paski sygnaĹ‚u WiFi (belki jak w telefonie)
+// x, y - pozycja lewego gĂłrnego rogu
+// strength - siĹ‚a sygnaĹ‚u 0-4 (0=brak, 4=max)
 void drawWifiSignalBars(int x, int y, int strength = -1) {
-  // Automatyczna detekcja siły sygnału jeśli nie podano
+  // Automatyczna detekcja siĹ‚y sygnaĹ‚u jeĹ›li nie podano
   if (strength < 0) {
     if (!wifiConnected || WiFi.status() != WL_CONNECTED) {
       strength = 0;
@@ -2852,15 +2965,15 @@ void drawWifiSignalBars(int x, int y, int strength = -1) {
   }
   
   // Kolory dla belek WiFi - gradient od czerwonego do zielonego
-  uint16_t bar1Color = TFT_RED;       // Belka 1 (słaby sygnał)
+  uint16_t bar1Color = TFT_RED;       // Belka 1 (sĹ‚aby sygnaĹ‚)
   uint16_t bar2Color = TFT_ORANGE;    // Belka 2
   uint16_t bar3Color = TFT_YELLOW;    // Belka 3
-  uint16_t bar4Color = TFT_GREEN;     // Belka 4 (mocny sygnał)
-  uint16_t noSignalColor = TFT_RED;   // Brak zasięgu
+  uint16_t bar4Color = TFT_GREEN;     // Belka 4 (mocny sygnaĹ‚)
+  uint16_t noSignalColor = TFT_RED;   // Brak zasiÄ™gu
   uint16_t emptyColor = TFT_DARKGREY; // Puste belki
   
-  // 4 belki o rosnącej wysokości w różnych kolorach (gradient)
-  // Belka 1 (najniższa) - CZERWONA
+  // 4 belki o rosnÄ…cej wysokoĹ›ci w rĂłĹĽnych kolorach (gradient)
+  // Belka 1 (najniĹĽsza) - CZERWONA
   if (strength >= 1) {
     tft.fillRect(x, y + 12, 6, 4, bar1Color);
   } else if (strength == 0) {
@@ -2869,7 +2982,7 @@ void drawWifiSignalBars(int x, int y, int strength = -1) {
     tft.drawRect(x, y + 12, 6, 4, emptyColor);
   }
   
-  // Belka 2 - POMARAŃCZOWA
+  // Belka 2 - POMARAĹCZOWA
   if (strength >= 2) {
     tft.fillRect(x + 8, y + 8, 6, 8, bar2Color);
   } else if (strength == 0) {
@@ -2878,7 +2991,7 @@ void drawWifiSignalBars(int x, int y, int strength = -1) {
     tft.drawRect(x + 8, y + 8, 6, 8, emptyColor);
   }
   
-  // Belka 3 - ŻÓŁTA
+  // Belka 3 - Ĺ»Ă“ĹTA
   if (strength >= 3) {
     tft.fillRect(x + 16, y + 4, 6, 12, bar3Color);
   } else if (strength == 0) {
@@ -2887,7 +3000,7 @@ void drawWifiSignalBars(int x, int y, int strength = -1) {
     tft.drawRect(x + 16, y + 4, 6, 12, emptyColor);
   }
   
-  // Belka 4 (najwyższa) - ZIELONA
+  // Belka 4 (najwyĹĽsza) - ZIELONA
   if (strength >= 4) {
     tft.fillRect(x + 24, y, 6, 16, bar4Color);
   } else if (strength == 0) {
@@ -2897,16 +3010,16 @@ void drawWifiSignalBars(int x, int y, int strength = -1) {
   }
 }
 
-// Funkcja rysująca ikonę baterii
-// x, y - pozycja lewego górnego rogu
-// percentage - procent naładowania 0-100
+// Funkcja rysujÄ…ca ikonÄ™ baterii
+// x, y - pozycja lewego gĂłrnego rogu
+// percentage - procent naĹ‚adowania 0-100
 void drawBatteryIcon(int x, int y, int percentage = -1) {
-  // Jeśli napięcie baterii jest 0.00V lub poniżej 0.1V, nie rysuj ikony
+  // JeĹ›li napiÄ™cie baterii jest 0.00V lub poniĹĽej 0.1V, nie rysuj ikony
   if (batteryVoltage <= 0.1f) {
     return;
   }
   
-  // Automatyczna detekcja procentu jeśli nie podano
+  // Automatyczna detekcja procentu jeĹ›li nie podano
   if (percentage < 0) {
     percentage = batteryPercentage;
   }
@@ -2921,25 +3034,25 @@ void drawBatteryIcon(int x, int y, int percentage = -1) {
   const int terminalW = 3;
   const int terminalH = 6;
   
-  // Kolor zależny od poziomu naładowania
+  // Kolor zaleĹĽny od poziomu naĹ‚adowania
   uint16_t batteryColor;
   if (percentage <= 20) {
     batteryColor = TFT_RED;      // Krytyczny
   } else if (percentage <= 50) {
     batteryColor = TFT_ORANGE;   // Niski
   } else if (percentage <= 75) {
-    batteryColor = TFT_YELLOW;   // Średni
+    batteryColor = TFT_YELLOW;   // Ĺšredni
   } else {
     batteryColor = TFT_GREEN;    // Wysoki
   }
   
-  // Rysuj obudowę baterii
+  // Rysuj obudowÄ™ baterii
   tft.drawRect(x, y + 2, batteryW, batteryH, TFT_WHITE);
   
-  // Rysuj terminal baterii (mały występ po prawej stronie)
+  // Rysuj terminal baterii (maĹ‚y wystÄ™p po prawej stronie)
   tft.fillRect(x + batteryW, y + 4, terminalW, terminalH, TFT_WHITE);
   
-  // Rysuj poziom naładowania (wewnątrz obudowy)
+  // Rysuj poziom naĹ‚adowania (wewnÄ…trz obudowy)
   int fillWidth = (batteryW - 4) * percentage / 100;
   if (fillWidth > 0) {
     tft.fillRect(x + 2, y + 4, fillWidth, batteryH - 4, batteryColor);
@@ -2961,20 +3074,20 @@ void updateScreen1HeaderClock() {
   char timeBuffer[6];
   strftime(timeBuffer, 6, "%H:%M", &timeinfo);
   
-  // Aktualizuj tylko jeśli czas się zmienił
+  // Aktualizuj tylko jeĹ›li czas siÄ™ zmieniĹ‚
   if (strcmp(timeBuffer, lastTimeBuffer) == 0) {
     return;
   }
   strcpy(lastTimeBuffer, timeBuffer);
   
-  // ZEGAR PO LEWEJ STRONIE - odświeżanie co sekundę
+  // ZEGAR PO LEWEJ STRONIE - odĹ›wieĹĽanie co sekundÄ™
   String timeStr = String(timeBuffer);
   tft.setTextSize(2);
   int timeWidth = tft.textWidth(timeStr);
-  int timeX = 10; // Lewa strona nagłówka
+  int timeX = 10; // Lewa strona nagĹ‚Ăłwka
   int timeY = 12;
   
-  // Wyczyść tło pod zegarem
+  // WyczyĹ›Ä‡ tĹ‚o pod zegarem
   tft.fillRect(timeX - 2, timeY - 2, timeWidth + 4, 20, TFT_RADIO_ORANGE);
   tft.setTextColor(TFT_BLACK);
   tft.setCursor(timeX, timeY);
@@ -2982,32 +3095,32 @@ void updateScreen1HeaderClock() {
 }
 
 void updateDxClusterClock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka
   return;
 }
 
 void updateWeatherClock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka
   return;
 }
 
 void updateWeatherForecastClock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka
   return;
 }
 
 void updateBandInfoClock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka
   return;
 }
 
 void updateHamalertClock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka
   return;
 }
 
 void updatePotaClusterClock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka
   return;
 }
 
@@ -3024,49 +3137,49 @@ void updateScreen1Header() {
   const int headerH = 40;
   const int screenW = 480;
   
-  // 1. TŁO I RAMKA LOGO
+  // 1. TĹO I RAMKA LOGO
   tft.fillRect(0, headerY, screenW, headerH, TFT_RADIO_ORANGE);
-  // Ciemniejsza krawędź na dole dla efektu 3D
+  // Ciemniejsza krawÄ™dĹş na dole dla efektu 3D
   tft.drawFastHLine(0, headerH - 1, screenW, 0x8410); 
 
-  // 2. FORMATOWANIE "LOGO" - "ESP32" w czarnej obwódce, "-HAM-CLOCK" normalnie
+  // 2. FORMATOWANIE "LOGO" - "ESP32" w czarnej obwĂłdce, "-HAM-CLOCK" normalnie
   String logoPart1 = "ESP32";
   String logoPart2 = "-HAM-CLOCK";
   tft.setTextSize(2);
   int charW = 12; // ~12px na znak przy TextSize 2
-  int textH = 16; // ~16px wysokość tekstu przy TextSize 2
+  int textH = 16; // ~16px wysokoĹ›Ä‡ tekstu przy TextSize 2
   
-  // Szerokości części napisu
+  // SzerokoĹ›ci czÄ™Ĺ›ci napisu
   int part1W = logoPart1.length() * charW;
   int part2W = logoPart2.length() * charW;
   int totalW = part1W + part2W;
   int startX = (screenW - totalW) / 2;
   int textY = 12;
-  int paddingX = 6;  // Odstęp poziomy w obwódce
-  int paddingY = 3;  // Odstęp pionowy w obwódce
+  int paddingX = 6;  // OdstÄ™p poziomy w obwĂłdce
+  int paddingY = 3;  // OdstÄ™p pionowy w obwĂłdce
   
-  // Czarna obwódka tylko dla "ESP32"
+  // Czarna obwĂłdka tylko dla "ESP32"
   tft.fillRect(startX - paddingX, textY - paddingY, 
                part1W + (2 * paddingX), textH + (2 * paddingY), 
                TFT_BLACK);
   
-  // "ESP32" w kolorze pomarańczowym (kolor paska)
+  // "ESP32" w kolorze pomaraĹ„czowym (kolor paska)
   tft.setTextColor(TFT_RADIO_ORANGE);
   tft.setCursor(startX, textY);
   tft.print(logoPart1);
   
-  // "-HAM-CLOCK" w kolorze czarnym (tak jak było)
+  // "-HAM-CLOCK" w kolorze czarnym (tak jak byĹ‚o)
   tft.setTextColor(TFT_BLACK);
   tft.setCursor(startX + part1W, textY);
   tft.print(logoPart2);
 
-  // 3. IKONA WiFi W PRAWYM GÓRNYM ROGU - BELKI JAK W TELEFONIE
+  // 3. IKONA WiFi W PRAWYM GĂ“RNYM ROGU - BELKI JAK W TELEFONIE
   drawWifiSignalBars(screenW - 45, 8);
   
   // 3.5. IKONA BATERII OBOK IKONY WiFi
   drawBatteryIcon(screenW - 70, 8);
 
-  // 4. ZEGAR W LEWYM GÓRNYM ROGU NAGŁÓWKA
+  // 4. ZEGAR W LEWYM GĂ“RNYM ROGU NAGĹĂ“WKA
   struct tm timeinfo;
   if (getLocalTime(&timeinfo, 1)) {
     char timeBuffer[6];
@@ -3074,9 +3187,9 @@ void updateScreen1Header() {
     String timeStr = String(timeBuffer);
     tft.setTextSize(2);
     int timeWidth = tft.textWidth(timeStr);
-    int timeX = 10; // Lewa strona nagłówka
+    int timeX = 10; // Lewa strona nagĹ‚Ăłwka
     int timeY = 12;
-    // Wyczyść tło pod zegarem
+    // WyczyĹ›Ä‡ tĹ‚o pod zegarem
     tft.fillRect(timeX - 2, timeY - 2, timeWidth + 4, 20, TFT_RADIO_ORANGE);
     tft.setTextColor(TFT_BLACK);
     tft.setCursor(timeX, timeY);
@@ -3087,24 +3200,24 @@ void updateScreen1Header() {
 }
 
 void drawHamClock() {
-  // Ciemne tło - profesjonalny wygląd i mniejsze zmęczenie oczu
+  // Ciemne tĹ‚o - profesjonalny wyglÄ…d i mniejsze zmÄ™czenie oczu
   tft.fillScreen(TFT_BLACK);
   screen1HeaderNeedsRedraw = true;
   
   const int screenW = 480;
   const int screenH = 320;
   
-  // 1. NAGŁÓWEK - Pomarańczowa belka z wyśrodkowanym napisem i ikoną WiFi
+  // 1. NAGĹĂ“WEK - PomaraĹ„czowa belka z wyĹ›rodkowanym napisem i ikonÄ… WiFi
   updateScreen1Header();
 
-  // 2. RAMKA WOKÓŁ ZNAKU, ZEGARA I DATY - powiększona
-  int clockFrameX = 30;     // Odstęp od lewej
-  int clockFrameW = 420;    // Szerokość ramki (szersza)
-  int clockFrameY = 45;     // Góra ramki
-  int clockFrameH = 220;    // Wysokość ramki (powiększona dla większego zegara i imienin)
+  // 2. RAMKA WOKĂ“Ĺ ZNAKU, ZEGARA I DATY - powiÄ™kszona
+  int clockFrameX = 30;     // OdstÄ™p od lewej
+  int clockFrameW = 420;    // SzerokoĹ›Ä‡ ramki (szersza)
+  int clockFrameY = 45;     // GĂłra ramki
+  int clockFrameH = 220;    // WysokoĹ›Ä‡ ramki (powiÄ™kszona dla wiÄ™kszego zegara i imienin)
   tft.drawRoundRect(clockFrameX, clockFrameY, clockFrameW, clockFrameH, 10, TFT_DARKGREY);
 
-  // 3. CALLSIGN - Wyśrodkowany w ramce (dokładne obliczenia)
+  // 3. CALLSIGN - WyĹ›rodkowany w ramce (dokĹ‚adne obliczenia)
   tft.setTextColor(callsignColor);
   tft.setTextSize(5);
   String callsign = (userCallsign.length() > 0) ? userCallsign : DEFAULT_CALLSIGN;
@@ -3115,7 +3228,7 @@ void drawHamClock() {
   tft.setCursor(max(10, callX), callY);
   tft.print(callsign);
 
-  // Napis "OPERATOR STATION" - pod callsign (wyśrodkowany)
+  // Napis "OPERATOR STATION" - pod callsign (wyĹ›rodkowany)
   tft.setTextSize(1);
   tft.setTextColor(TFT_RADIO_ORANGE);
   String opText = "OPERATOR STATION";
@@ -3124,7 +3237,7 @@ void drawHamClock() {
   tft.setCursor(opX, callY + 40);
   tft.print(opText);
 
-  // 4. ZEGAR - Dokładnie wyśrodkowany
+  // 4. ZEGAR - DokĹ‚adnie wyĹ›rodkowany
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(7);
   String timeStr = (screen1TimeMode == SCREEN1_TIME_LOCAL)
@@ -3148,21 +3261,32 @@ void drawHamClock() {
   tft.setCursor(labelX, timeY + 66);
   tft.print(timeLabel);
 
-  // 5. DATA - Dokładnie wyśrodkowana
+  // 5. DATA - DokĹ‚adnie wyĹ›rodkowana
   String dateText;
-  if (screen1TimeMode == SCREEN1_TIME_LOCAL) {
-    dateText = (tftLanguage == TFT_LANG_EN)
-                 ? getEnglishDateStringFullWithTimezone()
-                 : getPolishDateStringFullWithTimezone();
-  } else {
-    dateText = (tftLanguage == TFT_LANG_EN)
-                 ? getEnglishDateStringFull()
-                 : getPolishDateStringFull();
+  {
+    struct tm timeinfo;
+    bool timeValid = false;
+    if (screen1TimeMode == SCREEN1_TIME_LOCAL) {
+      timeValid = getTimeWithTimezone(&timeinfo);
+    } else {
+      timeValid = getLocalTime(&timeinfo, 1);
+    }
+    if (!timeValid || timeinfo.tm_year < 125) {
+      dateText = "...";
+    } else if (screen1TimeMode == SCREEN1_TIME_LOCAL) {
+      dateText = (tftLanguage == TFT_LANG_EN)
+                   ? getEnglishDateStringFullWithTimezone()
+                   : getPolishDateStringFullWithTimezone();
+    } else {
+      dateText = (tftLanguage == TFT_LANG_EN)
+                   ? getEnglishDateStringFull()
+                   : getPolishDateStringFull();
+    }
   }
   
-  // Data - używamy fontu VLW jeśli dostępny, inaczej standardowy
-  int dateY = timeY + 84;  // Pozycja Y daty - używana też w imieninach
-  if (littleFsReady && LittleFS.exists(ROBOTO_FONT20_FILE)) {
+  // Data - uĹĽywamy fontu VLW jeĹ›li dostÄ™pny, inaczej standardowy
+  int dateY = timeY + 84;  // Pozycja Y daty - uĹĽywana teĹĽ w imieninach
+  if (littleFsReady && LittleFS.exists(ROBOTO_FONT20_FILE) && ESP.getFreeHeap() > 80000) {
     tft.loadFont(ROBOTO_FONT20_NAME, LittleFS);
     tft.setTextColor(TFT_WHITE);
     int dateWidth = tft.textWidth(dateText);
@@ -3179,14 +3303,14 @@ void drawHamClock() {
     tft.print(sanitizePolishToAscii(dateText));
   }
 
-  // 6. IMIENINY - pod datą (tylko dla języka polskiego lub domyślnie)
+  // 6. IMIENINY - pod datÄ… (tylko dla jÄ™zyka polskiego lub domyĹ›lnie)
   if (tftLanguage != TFT_LANG_EN) {
     String nameDayText = getPolishNameDay();
     if (nameDayText.length() > 0) {
-      int nameDayY = dateY + 30;  // Pozycja pod datą
+      int nameDayY = dateY + 30;  // Pozycja pod datÄ…
       
-      // Używamy fontu VLW jeśli dostępny (obsługuje polskie znaki)
-      if (littleFsReady && LittleFS.exists(ROBOTO_FONT12_FILE)) {
+      // UĹĽywamy fontu VLW jeĹ›li dostÄ™pny (obsĹ‚uguje polskie znaki)
+      if (littleFsReady && LittleFS.exists(ROBOTO_FONT12_FILE) && ESP.getFreeHeap() > 80000) {
         tft.loadFont(ROBOTO_FONT12_NAME, LittleFS);
         tft.setTextColor(TFT_RADIO_ORANGE);
         int nameDayWidth = tft.textWidth(nameDayText);
@@ -3196,7 +3320,7 @@ void drawHamClock() {
         tft.print(nameDayText);
         tft.unloadFont();
       } else {
-        // Fallback - standardowe fonty bez polskich znaków
+        // Fallback - standardowe fonty bez polskich znakĂłw
         tft.setTextSize(2);
         tft.setTextColor(TFT_RADIO_ORANGE);
         String nameDayAscii = sanitizePolishToAscii(nameDayText);
@@ -3243,7 +3367,7 @@ void drawHamClock() {
     tft.print(noConn);
   }
   
-  // 8. STRZAŁKI NAWIGACYJNE
+  // 8. STRZAĹKI NAWIGACYJNE
   int arrowY = screenH - 30;
   int arrowSize = 12;
   tft.fillTriangle(15, arrowY, 15 + arrowSize, arrowY - arrowSize, 15 + arrowSize, arrowY + arrowSize, TFT_RADIO_ORANGE);
@@ -3261,24 +3385,24 @@ void updateScreen1Clock() {
   }
 
   const int screenW = 480;
-  const int timeY = 130;  // Zaktualizowana pozycja Y dla większego zegara
+  const int timeY = 130;  // Zaktualizowana pozycja Y dla wiÄ™kszego zegara
 
   String timeStr = (screen1TimeMode == SCREEN1_TIME_LOCAL)
                      ? getTimezoneTimeString("%H:%M:%S", 9)
                      : getUtcTimeString();
   
-  // Wyśrodkowanie na całym ekranie, TextSize 7 (powiększony)
+  // WyĹ›rodkowanie na caĹ‚ym ekranie, TextSize 7 (powiÄ™kszony)
   int timeWidth = timeStr.length() * 42;  // ~42px na znak przy TextSize 7
   int timeX = (screenW - timeWidth) / 2;
   if (timeX < 10) timeX = 10;
   
-  // Stała szerokość paddingu dla stabilnego czyszczenia (max 8 znaków * 42px)
+  // StaĹ‚a szerokoĹ›Ä‡ paddingu dla stabilnego czyszczenia (max 8 znakĂłw * 42px)
   const int fixedPaddingWidth = 8 * 42 + 10; // 336 + 10 margin
   
-  // Narysuj zegar z tłem (bez czyszczenia - eliminuje migotanie)
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); // Tekst z tłem
-  tft.setTextSize(7);  // POWIĘKSZONY zegar
-  tft.setTextPadding(fixedPaddingWidth); // Stały padding dla stabilności
+  // Narysuj zegar z tĹ‚em (bez czyszczenia - eliminuje migotanie)
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); // Tekst z tĹ‚em
+  tft.setTextSize(7);  // POWIÄKSZONY zegar
+  tft.setTextPadding(fixedPaddingWidth); // StaĹ‚y padding dla stabilnoĹ›ci
   tft.setCursor(timeX, timeY);
   tft.print(timeStr);
   tft.setTextPadding(0); // Reset
@@ -3296,7 +3420,7 @@ void updateScreen1Date() {
   } else {
     gotTime = getLocalTime(&timeinfo, 1);
   }
-  if (!gotTime) {
+  if (!gotTime || timeinfo.tm_year < 125) {
     return;
   }
 
@@ -3326,7 +3450,7 @@ void updateScreen1Date() {
 }
 
 void updateScreen2Clock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka DX Cluster
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka DX Cluster
   return;
 }
 
@@ -3418,7 +3542,7 @@ bool aprsSortLess(int a, int b) {
     }
     return da < db;
   }
-  // APRS_SORT_TIME = aktualna kolejność
+  // APRS_SORT_TIME = aktualna kolejnoĹ›Ä‡
   return a < b;
 }
 
@@ -3446,7 +3570,7 @@ void buildAprsDisplayOrder(int *order, int &count) {
 }
 
 uint32_t computeScreen2Signature() {
-  // Prosty hash treści tabeli (10 lub 11 wierszy zależnie od paska nawigacji)
+  // Prosty hash treĹ›ci tabeli (10 lub 11 wierszy zaleĹĽnie od paska nawigacji)
   const uint32_t fnvPrime = 16777619u;
   uint32_t hash = 2166136261u;
 
@@ -3502,10 +3626,10 @@ void updateScreen2Data() {
     return;
   }
 
-  // 1) Zaktualizuj czas w nagłówku (bez pełnego odświeżania)
+  // 1) Zaktualizuj czas w nagĹ‚Ăłwku (bez peĹ‚nego odĹ›wieĹĽania)
   updateScreen2Clock();
 
-  // 2) Odśwież tabelę tylko gdy dane się zmieniły
+  // 2) OdĹ›wieĹĽ tabelÄ™ tylko gdy dane siÄ™ zmieniĹ‚y
   static uint32_t lastSig = 0;
   static unsigned long lastTableRedrawMs = 0;
   uint32_t currentSig = computeScreen2Signature();
@@ -3521,7 +3645,7 @@ void updateScreen2Data() {
   lastSig = currentSig;
   lastTableRedrawMs = now;
 
-  // 3) Renderuj tabelę do bufora i wypchnij jednym ruchem (bez migotania)
+  // 3) Renderuj tabelÄ™ do bufora i wypchnij jednym ruchem (bez migotania)
   const bool navVisible = isTableNavFooterVisible(SCREEN_DX_CLUSTER);
   const bool enlarged = isDxTableEnlarged();
   const int maxRows = getDxTableMaxRows();
@@ -3738,13 +3862,13 @@ void updateScreen2Data() {
     tft.print("WAITING FOR SPOTS...");
   }
   
-  // Strzałki nawigacyjne - ZAWSZE rysuj po odświeżeniu tabeli
+  // StrzaĹ‚ki nawigacyjne - ZAWSZE rysuj po odĹ›wieĹĽeniu tabeli
   drawSwitchScreenFooter();
 }
 
-// Ekran 7: POTA Cluster (SSB only, 10 spotów)
+// Ekran 7: POTA Cluster (SSB only, 10 spotĂłw)
 void drawPotaCluster() {
-  // Użyj tych samych współrzędnych co w drawHamClock() - ograniczenie do obszaru ramki
+  // UĹĽyj tych samych wspĂłĹ‚rzÄ™dnych co w drawHamClock() - ograniczenie do obszaru ramki
 
   tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
   tft.setTextColor(TFT_BLACK);
@@ -3758,13 +3882,13 @@ void drawPotaCluster() {
   tft.setCursor(potaX, 8);
   tft.print(potaText);
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
   
   // Ikona baterii obok ikony WiFi
   drawBatteryIcon(420, 4);
 
-  // ZEGAR w prawym górnym rogu - USUNIĘTY
+  // ZEGAR w prawym gĂłrnym rogu - USUNIÄTY
   // struct tm timeinfo;
   // if (getLocalTime(&timeinfo, 1)) {
   //   char timeBuffer[10];
@@ -3830,7 +3954,7 @@ void drawPotaCluster() {
       tft.setTextColor(TFT_LIGHTGREY);
       tft.setCursor(5, yPos);
       String timeStr = potaSpots[i].time;
-      // Obsłuż ISO 8601 z datą: wyciągnij HH:MM
+      // ObsĹ‚uĹĽ ISO 8601 z datÄ…: wyciÄ…gnij HH:MM
       int tPos = timeStr.indexOf('T');
       if (tPos > 0 && tPos + 5 < (int)timeStr.length()) {
         timeStr = timeStr.substring(tPos + 1, tPos + 6);
@@ -3847,7 +3971,7 @@ void drawPotaCluster() {
 
       tft.setTextColor(TFT_YELLOW);
       tft.setCursor(125, yPos);
-      tft.print(potaSpots[i].frequency, 3); // frequency już w MHz
+      tft.print(potaSpots[i].frequency, 3); // frequency juĹĽ w MHz
 
       tft.setTextColor(TFT_GREEN);
       tft.setCursor(240, yPos);
@@ -3864,7 +3988,7 @@ void drawPotaCluster() {
   }
 
   if (isTableNavFooterVisible(SCREEN_POTA_CLUSTER)) {
-    // Strzałki nawigacyjne - duże, blisko krawędzi (takie same na wszystkich ekranach)
+    // StrzaĹ‚ki nawigacyjne - duĹĽe, blisko krawÄ™dzi (takie same na wszystkich ekranach)
     int arrowY = 290;
     int arrowSize = 12;
     tft.fillTriangle(15, arrowY, 15 + arrowSize, arrowY - arrowSize, 15 + arrowSize, arrowY + arrowSize, menuThemeColor);
@@ -3951,7 +4075,7 @@ void updateScreen7Data() {
     return;
   }
 
-  // Wyłączono - używamy tylko updatePotaClusterClock dla zegara w prawym rogu
+  // WyĹ‚Ä…czono - uĹĽywamy tylko updatePotaClusterClock dla zegara w prawym rogu
   // updateScreen7Clock();
 
   static uint32_t lastSig = 0;
@@ -4134,7 +4258,7 @@ void updateScreen7Data() {
         tft.fillRect(0, yPos - 2, 480, 16, TFT_TABLE_ALT_ROW_COLOR);
       }
 
-      // Znak wywoławczy - rozmiar 1 (standardowy)
+      // Znak wywoĹ‚awczy - rozmiar 1 (standardowy)
       tft.setTextSize(1);
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
       tft.setCursor(50, yPos);
@@ -4143,7 +4267,7 @@ void updateScreen7Data() {
       if (callStr.length() > 8) callStr = callStr.substring(0, 8);
       tft.print(callStr);
       
-      // Częstotliwość - rozmiar 1
+      // CzÄ™stotliwoĹ›Ä‡ - rozmiar 1
       tft.setTextColor(TFT_YELLOW, TFT_BLACK);
       tft.setCursor(140, yPos);
       tft.print(potaSpots[i].frequency, 3);
@@ -4155,7 +4279,7 @@ void updateScreen7Data() {
       if (modeStr.length() > 4) modeStr = modeStr.substring(0, 4);
       tft.print(modeStr);
       
-      // Czas i kraj - rozmiar 1 (dopasowane do nagłówków)
+      // Czas i kraj - rozmiar 1 (dopasowane do nagĹ‚ĂłwkĂłw)
       tft.setTextSize(1);
       tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
       tft.setCursor(5, yPos + 5);
@@ -4184,7 +4308,7 @@ void updateScreen7Data() {
     tft.print("WAITING FOR SPOTS...");
   }
   
-  // Strzałki nawigacyjne - ZAWSZE rysuj po odświeżeniu tabeli
+  // StrzaĹ‚ki nawigacyjne - ZAWSZE rysuj po odĹ›wieĹĽeniu tabeli
   drawSwitchScreenFooter();
 }
 
@@ -4225,7 +4349,7 @@ void drawHamalertCluster() {
   tft.setCursor(35, 8);
   tft.print("HAMALERT.org");
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
   
   // Ikona baterii obok ikony WiFi
@@ -4319,7 +4443,7 @@ void drawHamalertCluster() {
     displayCount++;
   }
 
-  // Strzałki nawigacyjne - ZAWSZE widoczne
+  // StrzaĹ‚ki nawigacyjne - ZAWSZE widoczne
   drawSwitchScreenFooter();
 
   if (displayCount == 0) {
@@ -4403,7 +4527,7 @@ void updateScreen8Data() {
     return;
   }
 
-  // Wyłączono - zegar tylko na górnym pasku przez updateHamalertClock
+  // WyĹ‚Ä…czono - zegar tylko na gĂłrnym pasku przez updateHamalertClock
   // updateScreen8Clock();
 
   static uint32_t lastSig = 0;
@@ -4515,7 +4639,7 @@ void updateScreen8Data() {
     tft.print("WAITING FOR SPOTS...");
   }
   
-  // Strzałki nawigacyjne - ZAWSZE rysuj po odświeżeniu tabeli
+  // StrzaĹ‚ki nawigacyjne - ZAWSZE rysuj po odĹ›wieĹĽeniu tabeli
   drawSwitchScreenFooter();
 }
 
@@ -4647,14 +4771,14 @@ void loadDefaultScreenOrder() {
 
 void ensureScreenOrderValid() {
   bool hasActive = false;
-  bool seen[15] = {false}; // indeksy odpowiadają ScreenType wartościom (0..14)
+  bool seen[15] = {false}; // indeksy odpowiadajÄ… ScreenType wartoĹ›ciom (0..14)
   for (int i = 0; i < SCREEN_ORDER_COUNT; i++) {
     screenOrder[i] = normalizeScreenType(screenOrder[i]);
     ScreenType t = screenOrder[i];
     if (t != SCREEN_OFF) {
       if (t >= 0 && t <= SCREEN_ISS_PASS_TRACKING) {
         if (seen[t]) {
-          // drugi raz ten sam ekran â€“ usuń duplikat
+          // drugi raz ten sam ekran Ă˘â‚¬â€ś usuĹ„ duplikat
           screenOrder[i] = SCREEN_OFF;
           continue;
         }
@@ -4753,14 +4877,14 @@ void handleTouchNavigation() {
   int16_t rawX = 0;
   int16_t rawY = 0;
   if (readRawTouchPoint(rawX, rawY)) {
-    // Jeśli ekran jest w trybie uśpienia - wybudź go
+    // JeĹ›li ekran jest w trybie uĹ›pienia - wybudĹş go
     if (screenSleepActive) {
       wakeUpFromSleep();
       return;
     }
     mapRawToScreen(rawX, rawY, x, y);
-    resetScreenSaverActivity();  // Reset wygaszacza przy aktywności użytkownika
-    // Reset timera uśpienia przy aktywności
+    resetScreenSaverActivity();  // Reset wygaszacza przy aktywnoĹ›ci uĹĽytkownika
+    // Reset timera uĹ›pienia przy aktywnoĹ›ci
     screenSleepLastActivityMs = millis();
     bool isNewTap = false;
     if (!touchActive) {
@@ -4789,7 +4913,7 @@ void handleTouchNavigation() {
       return;
     }
 
-    // Obsługa wygaszacza ekranu - dotknięcie wchodzi w menu ustawień
+    // ObsĹ‚uga wygaszacza ekranu - dotkniÄ™cie wchodzi w menu ustawieĹ„
     if (screenSaverActive) {
       if (isNewTap) {
         resetScreenSaverActivity();
@@ -4902,20 +5026,20 @@ void handleTouchNavigation() {
           drawDxClusterFilterMenu();
           return;
         }
-      // Kliknięcie w znak (callsign) - sprawdź czy dotknięto wiersza z spotem
+      // KlikniÄ™cie w znak (callsign) - sprawdĹş czy dotkniÄ™to wiersza z spotem
       if (y >= 40 && y < 280 && x >= 50 && x <= 200) {
-        // Oblicz który wiersz został dotknięty
+        // Oblicz ktĂłry wiersz zostaĹ‚ dotkniÄ™ty
         int rowHeight = isDxTableEnlarged() ? 27 : 20;
         int headerOffset = 40;
         int clickedRow = (y - headerOffset) / rowHeight;
         if (clickedRow >= 0) {
-          // Znajdź spot w tablicy
+          // ZnajdĹş spot w tablicy
           lockDxSpots();
           int displayCount = 0;
           for (int i = 0; i < spotCount; i++) {
             if (!spotMatchesScreen2Filters(spots[i])) continue;
             if (displayCount == clickedRow) {
-              // Kliknięto w ten spot
+              // KlikniÄ™to w ten spot
               String callsign = spots[i].callsign;
               unlockDxSpots();
               openQrzPopup(callsign);
@@ -4933,19 +5057,19 @@ void handleTouchNavigation() {
           drawPotaFilterMenu();
           return;
         }
-      // Kliknięcie w znak (callsign) - sprawdź czy dotknięto wiersza z spotem
+      // KlikniÄ™cie w znak (callsign) - sprawdĹş czy dotkniÄ™to wiersza z spotem
       if (y >= 40 && y < 280 && x >= 50 && x <= 200) {
-        // Oblicz który wiersz został dotknięty
+        // Oblicz ktĂłry wiersz zostaĹ‚ dotkniÄ™ty
         int rowHeight = isDxTableEnlarged() ? 27 : 20;
         int headerOffset = 40;
         int clickedRow = (y - headerOffset) / rowHeight;
         if (clickedRow >= 0) {
-          // Znajdź spot w tablicy POTA
+          // ZnajdĹş spot w tablicy POTA
           int displayCount = 0;
           for (int i = 0; i < potaSpotCount; i++) {
             if (!spotMatchesScreen7Filters(potaSpots[i])) continue;
             if (displayCount == clickedRow) {
-              // Kliknięto w ten spot
+              // KlikniÄ™to w ten spot
               String callsign = potaSpots[i].callsign;
               openQrzPopup(callsign);
               return;
@@ -5029,7 +5153,7 @@ void handleTouchNavigation() {
 
     // Nawigacja: dolne obszary dotyku (ok. 80x180)
     // Zamienione kierunki: lewa strona = w prawo (next), prawa strona = w lewo (prev)
-    // TYLKO gdy nie jesteśmy w żadnym menu i nie ma aktywnej klawiatury
+    // TYLKO gdy nie jesteĹ›my w ĹĽadnym menu i nie ma aktywnej klawiatury
     if (!inMenu && !brightnessMenuActive && !screenSaverMenuActive && !screenSleepMenuActive && !touchCalActive && !pskKeyboardActive) {
       const uint16_t cornerY = 60;
       const uint16_t cornerX = 80;
@@ -5046,7 +5170,7 @@ void handleTouchNavigation() {
       }
     }
 
-    // Obsługa PSK map - na końcu, aby nie blokować nawigacji w rogach
+    // ObsĹ‚uga PSK map - na koĹ„cu, aby nie blokowaÄ‡ nawigacji w rogach
     if (currentScreen == SCREEN_PSK_MAP) {
       handlePskMapTouch(x, y);
       return;
@@ -5055,7 +5179,7 @@ void handleTouchNavigation() {
     touchActive = false;
     longPressHandled = false;
     matrixGameHoldCandidate = false;
-    // Reset liczników long-press dla menu jasności po puszczeniu dotyku
+    // Reset licznikĂłw long-press dla menu jasnoĹ›ci po puszczeniu dotyku
     if (brightnessMenuActive) {
       brightnessMenuTouchStartMs = 0;
       brightnessMenuLongPressHandled = false;
@@ -5066,19 +5190,19 @@ void handleTouchNavigation() {
 void drawDxCluster() {
   tft.fillScreen(TFT_BLACK);
 
-  // 1. NAGÄąÂÄ‚â€śWEK: Belka z menu, nazwĂ„â€¦ klastra i czasem UTC
+  // 1. NAGĂ„Ä…Ă‚ÂĂ„â€šĂ˘â‚¬Ĺ›WEK: Belka z menu, nazwÄ‚â€žĂ˘â‚¬Â¦ klastra i czasem UTC
   tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
   tft.setTextColor(TFT_BLACK);
 
 // IKONA MENU (3D)
 drawHamburgerMenuButton3D(5, 7);
 
-// Nazwa klastra - przesunięta w prawo (x=35 zamiast 5), by zrobić miejsce na menu
+// Nazwa klastra - przesuniÄ™ta w prawo (x=35 zamiast 5), by zrobiÄ‡ miejsce na menu
 tft.setTextSize(2);
 tft.setCursor(35, 8);
 tft.print(clusterHost);
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
   
   // Ikona baterii obok ikony WiFi
@@ -5086,7 +5210,7 @@ tft.print(clusterHost);
 
   // ZEGAR - rysowany osobno przez updateDxClusterClock()
 
-  // 2. NAGŁÓWKI TABELI
+  // 2. NAGĹĂ“WKI TABELI
   const bool enlarged = isDxTableEnlarged();
   int yPos = 40;
   tft.setTextColor(TFT_DARKGREY);
@@ -5107,7 +5231,7 @@ tft.print(clusterHost);
   tft.drawFastHLine(0, yPos + 10, 480, TFT_DARKGREY);
   yPos += enlarged ? 20 : 18;
 
-  // 3. LISTA SPOTÄ‚â€śW
+  // 3. LISTA SPOTĂ„â€šĂ˘â‚¬Ĺ›W
   int maxRows = getDxTableMaxRows();
   int displayCount = 0;
   lockDxSpots();
@@ -5141,7 +5265,7 @@ tft.print(clusterHost);
     } else {
       if (displayCount % 2 == 0) tft.fillRect(0, yPos - 2, 480, 16, TFT_TABLE_ALT_ROW_COLOR);
 
-      // Znak wywoławczy - rozmiar 1 (standardowy)
+      // Znak wywoĹ‚awczy - rozmiar 1 (standardowy)
       tft.setTextSize(1);
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
       tft.setCursor(50, yPos);
@@ -5150,7 +5274,7 @@ tft.print(clusterHost);
       if (callStr.length() > 8) callStr = callStr.substring(0, 8);
       tft.print(callStr);
       
-      // Częstotliwość - rozmiar 1
+      // CzÄ™stotliwoĹ›Ä‡ - rozmiar 1
       tft.setTextColor(TFT_YELLOW, TFT_BLACK);
       tft.setCursor(140, yPos);
       tft.print(spots[i].frequency / 1000.0, 3);
@@ -5162,7 +5286,7 @@ tft.print(clusterHost);
       if (modeStr.length() > 4) modeStr = modeStr.substring(0, 4);
       tft.print(modeStr);
       
-      // Czas i kraj - rozmiar 1 (dopasowane do nagłówków)
+      // Czas i kraj - rozmiar 1 (dopasowane do nagĹ‚ĂłwkĂłw)
       tft.setTextSize(1);
       tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
       tft.setCursor(5, yPos + 5);
@@ -5187,7 +5311,7 @@ tft.print(clusterHost);
     tft.setCursor(40, 120);
     tft.print("WAITING FOR SPOTS...");
   }
-  drawSwitchScreenFooter(); // Dodano rysowanie strzałek nawigacyjnych
+  drawSwitchScreenFooter(); // Dodano rysowanie strzaĹ‚ek nawigacyjnych
 }
 
 bool isPointInRect(uint16_t x, uint16_t y, int rx, int ry, int rw, int rh) {
@@ -5357,8 +5481,8 @@ static void drawAprsRadarBody() {
     outerRadius = 20;
   }
 
-  const int fixedOuterRadius = baseOuterRadius; // nowy, stały wizualnie pierścień 100%
-  const int fixedHalfRadius = max(1, fixedOuterRadius / 2); // nowy, stały wizualnie pierścień 50%
+  const int fixedOuterRadius = baseOuterRadius; // nowy, staĹ‚y wizualnie pierĹ›cieĹ„ 100%
+  const int fixedHalfRadius = max(1, fixedOuterRadius / 2); // nowy, staĹ‚y wizualnie pierĹ›cieĹ„ 50%
 
   const float zoomSafe = (screen6RadarZoom > 0.01f) ? screen6RadarZoom : 0.01f;
   const float fixedOuterKm = (aprsFilterRadius > 0)
@@ -5377,11 +5501,11 @@ static void drawAprsRadarBody() {
     tft.fillCircle(centerX, centerY, outerRadius - 1, radarCircleBgColor);
   }
 
-  // Dodane stałe pierścienie referencyjne na spodzie (stacje są rysowane później, nad nimi)
+  // Dodane staĹ‚e pierĹ›cienie referencyjne na spodzie (stacje sÄ… rysowane pĂłĹşniej, nad nimi)
   tft.drawCircle(centerX, centerY, fixedOuterRadius, ringColor); // 100%
   tft.drawCircle(centerX, centerY, fixedHalfRadius, ringColor);  // 50%
 
-  // Oryginalne okręgi radaru
+  // Oryginalne okrÄ™gi radaru
   tft.drawCircle(centerX, centerY, outerRadius, TFT_WHITE);
   tft.drawCircle(centerX, centerY, clampedInnerRadius, radarAlertColor);
 
@@ -6042,7 +6166,7 @@ void drawBrightnessSlider() {
   const int sliderH = 12;
   const int knobW = 6;
 
-  // Wyczyść obszar suwaka (z zapasem na pokrętło), żeby nie zostawał ślad
+  // WyczyĹ›Ä‡ obszar suwaka (z zapasem na pokrÄ™tĹ‚o), ĹĽeby nie zostawaĹ‚ Ĺ›lad
   tft.fillRect(sliderX - knobW, sliderY - 6, sliderW + knobW * 2, sliderH + 12, TFT_BLACK);
 
   tft.drawRect(sliderX, sliderY, sliderW, sliderH, TFT_WHITE);
@@ -6070,7 +6194,7 @@ void drawThemeSlider() {
   const int sliderH = 12;
   const int knobW = 6;
 
-  // Wyczyść obszar suwaka (z zapasem na pokrętło)
+  // WyczyĹ›Ä‡ obszar suwaka (z zapasem na pokrÄ™tĹ‚o)
   tft.fillRect(sliderX - knobW, sliderY - 6, sliderW + knobW * 2, sliderH + 12, TFT_BLACK);
 
   for (int i = 0; i < sliderW; i++) {
@@ -6100,7 +6224,7 @@ void drawBrightnessMenu() {
   tft.fillScreen(TFT_BLACK);
   drawBrightnessMenuHeader();
 
-  // Podpowiedź: długi tap 3s w dowolnym miejscu uruchamia kalibrację
+  // PodpowiedĹş: dĹ‚ugi tap 3s w dowolnym miejscu uruchamia kalibracjÄ™
   tft.setTextColor(TFT_LIGHTGREY);
   tft.setTextSize(1);
   tft.setCursor(10, 40);
@@ -6198,7 +6322,7 @@ void drawTouchCalibrationScreen() {
     tft.print("          InvY:");
     tft.print(touchInvertY ? "YES" : "NO");
     
-    // Podpowiedź do ustawienia w WWW
+    // PodpowiedĹş do ustawienia w WWW
     tft.setTextColor(TFT_YELLOW);
     tft.setCursor(10, 145);
     tft.print("Use WWW panel >");
@@ -6208,7 +6332,7 @@ void drawTouchCalibrationScreen() {
     tft.setTextColor(TFT_GREENYELLOW);
     tft.setCursor(10, 180);
     
-    // Ustal jaki tryb sugerować
+    // Ustal jaki tryb sugerowaÄ‡
     if (touchSwapXY && touchInvertX && touchInvertY) {
       tft.print("-> SWAP XY + INVERT BOTH");
     } else if (touchSwapXY && touchInvertX) {
@@ -6288,7 +6412,7 @@ void handleTouchCalibrationTouch(int16_t rawX, int16_t rawY, uint16_t x, uint16_
   }
 
   if (touchCalStep == 0) {
-    // Target 1: lewy górny (20, 20)
+    // Target 1: lewy gĂłrny (20, 20)
     touchCalRawX1 = rawX;
     touchCalRawY1 = rawY;
     touchCalStep = 1;
@@ -6297,7 +6421,7 @@ void handleTouchCalibrationTouch(int16_t rawX, int16_t rawY, uint16_t x, uint16_
   }
 
   if (touchCalStep == 1) {
-    // Target 2: prawy górny (300, 20)
+    // Target 2: prawy gĂłrny (300, 20)
     touchCalRawX2 = rawX;
     touchCalRawY2 = rawY;
     touchCalStep = 2;
@@ -6320,27 +6444,27 @@ void handleTouchCalibrationTouch(int16_t rawX, int16_t rawY, uint16_t x, uint16_
     touchCalRawY4 = rawY;
     
     // Wszystkie 4 punkty zebrane - oblicz parametry
-    // Min/Max ze wszystkich 4 punktów surowych
+    // Min/Max ze wszystkich 4 punktĂłw surowych
     touchCalNewXMin = min(min(touchCalRawX1, touchCalRawX2), min(touchCalRawX3, touchCalRawX4));
     touchCalNewXMax = max(max(touchCalRawX1, touchCalRawX2), max(touchCalRawX3, touchCalRawX4));
     touchCalNewYMin = min(min(touchCalRawY1, touchCalRawY2), min(touchCalRawY3, touchCalRawY4));
     touchCalNewYMax = max(max(touchCalRawY1, touchCalRawY2), max(touchCalRawY3, touchCalRawY4));
     
-    // Wykryj swap: porównaj rozpiętość surowych wartości
-    // Targets rozciągają się w X: 20-300 (280px) i Y: 20-220 (200px)
-    // Jeśli deltaRawY > deltaRawX, osie są zamienione
+    // Wykryj swap: porĂłwnaj rozpiÄ™toĹ›Ä‡ surowych wartoĹ›ci
+    // Targets rozciÄ…gajÄ… siÄ™ w X: 20-300 (280px) i Y: 20-220 (200px)
+    // JeĹ›li deltaRawY > deltaRawX, osie sÄ… zamienione
     int deltaRawX = touchCalNewXMax - touchCalNewXMin;
     int deltaRawY = touchCalNewYMax - touchCalNewYMin;
     touchSwapXY = (deltaRawY > deltaRawX);
     
-    // Wykryj odwrócenie osi
-    // Porównaj punkt 1 (góra-lewo) z punktem 3 (dół-prawo)
+    // Wykryj odwrĂłcenie osi
+    // PorĂłwnaj punkt 1 (gĂłra-lewo) z punktem 3 (dĂłĹ‚-prawo)
     int16_t x1 = touchCalRawX1;
     int16_t y1 = touchCalRawY1;
     int16_t x3 = touchCalRawX3;
     int16_t y3 = touchCalRawY3;
     
-    // Jeśli osie są zamienione, swap współrzędne przed sprawdzeniem kierunku
+    // JeĹ›li osie sÄ… zamienione, swap wspĂłĹ‚rzÄ™dne przed sprawdzeniem kierunku
     if (touchSwapXY) {
       int16_t tmp = x1; x1 = y1; y1 = tmp;
       tmp = x3; x3 = y3; y3 = tmp;
@@ -6356,8 +6480,8 @@ void handleTouchCalibrationTouch(int16_t rawX, int16_t rawY, uint16_t x, uint16_
   }
 
   if (touchCalStep >= 4) {
-    // Dowolne dotknięcie zamyka ekran kalibracji bez zapisywania
-    // Przywróć poprzednie wartości flag
+    // Dowolne dotkniÄ™cie zamyka ekran kalibracji bez zapisywania
+    // PrzywrĂłÄ‡ poprzednie wartoĹ›ci flag
     touchSwapXY = TOUCH_SWAP_XY;
     touchInvertX = TOUCH_INVERT_X;
     touchInvertY = TOUCH_INVERT_Y;
@@ -6374,13 +6498,13 @@ void handleBrightnessMenuTouch(uint16_t x, uint16_t y, bool isNewTap) {
     return;
   }
 
-  // Zawsze aktualizuj znacznik startu dla bieżącego dotknięcia, zanim obsłużymy kafelki
+  // Zawsze aktualizuj znacznik startu dla bieĹĽÄ…cego dotkniÄ™cia, zanim obsĹ‚uĹĽymy kafelki
   if (isNewTap) {
     brightnessMenuTouchStartMs = now;
     brightnessMenuLongPressHandled = false;
   }
 
-  // Długi tap (>=5s) w dowolnym miejscu ekranu jasności uruchamia kalibrację dotyku
+  // DĹ‚ugi tap (>=5s) w dowolnym miejscu ekranu jasnoĹ›ci uruchamia kalibracjÄ™ dotyku
   if (!brightnessMenuLongPressHandled && brightnessMenuTouchStartMs > 0 && (now - brightnessMenuTouchStartMs) >= 5000) {
     brightnessMenuLongPressHandled = true;
     startTouchCalibration();
@@ -6399,7 +6523,7 @@ void handleBrightnessMenuTouch(uint16_t x, uint16_t y, bool isNewTap) {
   const int langStartX = (480 - (2 * langTileW + langGap)) / 2;
   const int langY = 240;
 
-  // Obsługa sliderów
+  // ObsĹ‚uga sliderĂłw
   if (y >= sliderY - 6 && y <= sliderY + sliderH + 6) {
     setBrightnessFromTouch(x);
   }
@@ -6410,7 +6534,7 @@ void handleBrightnessMenuTouch(uint16_t x, uint16_t y, bool isNewTap) {
   if (isNewTap) {
     if (isPointInRect(x, y, langStartX, langY, langTileW, langTileH)) {
       tftLanguage = TFT_LANG_PL;
-      // Wymuś odświeżenie opisów pogody po zmianie języka
+      // WymuĹ› odĹ›wieĹĽenie opisĂłw pogody po zmianie jÄ™zyka
       lastWeatherFetchMs = 0;
       weatherData.valid = false;
       weatherData.forecast3hValid = false;
@@ -6424,7 +6548,7 @@ void handleBrightnessMenuTouch(uint16_t x, uint16_t y, bool isNewTap) {
     }
     if (isPointInRect(x, y, langStartX + langTileW + langGap, langY, langTileW, langTileH)) {
       tftLanguage = TFT_LANG_EN;
-      // Wymuś odświeżenie opisów pogody po zmianie języka
+      // WymuĹ› odĹ›wieĹĽenie opisĂłw pogody po zmianie jÄ™zyka
       lastWeatherFetchMs = 0;
       weatherData.valid = false;
       weatherData.forecast3hValid = false;
@@ -6476,9 +6600,9 @@ void handleBrightnessMenuTouch(uint16_t x, uint16_t y, bool isNewTap) {
     return;
   }
   
-  // Przycisk UŚPIENIE - otwórz menu uśpienia
+  // Przycisk UĹšPIENIE - otwĂłrz menu uĹ›pienia
   if (isPointInRect(x, y, saverX, btnY, btnW, btnH)) {
-    brightnessMenuActive = false;  // Zamknij menu jasności
+    brightnessMenuActive = false;  // Zamknij menu jasnoĹ›ci
     screenSleepMenuActive = true;
     drawScreenSleepMenu();
     return;
@@ -6529,7 +6653,7 @@ void updateScreen6Clock() {
 }
 
 uint32_t computeScreen6Signature() {
-  // Prosty hash treÄąâ€şci tabeli (10 lub 11 stacji APRS zależnie od paska nawigacji)
+  // Prosty hash treĂ„Ä…Ă˘â‚¬Ĺźci tabeli (10 lub 11 stacji APRS zaleĹĽnie od paska nawigacji)
   const uint32_t fnvPrime = 16777619u;
   uint32_t hash = 2166136261u;
 
@@ -6582,10 +6706,10 @@ void updateScreen6Data() {
     return;
   }
 
-  // 1) Zaktualizuj czas w nagłówku (bez pełnego odświeżania)
+  // 1) Zaktualizuj czas w nagĹ‚Ăłwku (bez peĹ‚nego odĹ›wieĹĽania)
   updateScreen6Clock();
 
-  // 2) Odśwież tabelę tylko gdy dane się zmieniły
+  // 2) OdĹ›wieĹĽ tabelÄ™ tylko gdy dane siÄ™ zmieniĹ‚y
   static uint32_t lastSig = 0;
   uint32_t currentSig = computeScreen6Signature();
   if (currentSig == lastSig) {
@@ -6598,7 +6722,7 @@ void updateScreen6Data() {
     return;
   }
 
-  // 3) Renderuj tabelę do bufora i wypchnij jednym ruchem (bez migotania)
+  // 3) Renderuj tabelÄ™ do bufora i wypchnij jednym ruchem (bez migotania)
   const bool navVisible = isTableNavFooterVisible(SCREEN_APRS_IS);
   const bool enlarged = isDxTableEnlarged();
   const int maxRows = getAprsTableMaxRows();
@@ -6855,7 +6979,7 @@ void updateScreen6Data() {
     tft.print("WAITING FOR APRS...");
   }
   
-  // Strzałki nawigacyjne - ZAWSZE rysuj po odświeżeniu tabeli
+  // StrzaĹ‚ki nawigacyjne - ZAWSZE rysuj po odĹ›wieĹĽeniu tabeli
   drawSwitchScreenFooter();
 }
 
@@ -6863,27 +6987,27 @@ void drawAprsIs() {
   screen6ViewMode = APRS_VIEW_LIST;
   tft.fillScreen(TFT_BLACK);
 
-  // 1. NAGÄąÂÄ‚â€śWEK: Belka z menu, nazwĂ„â€¦ serwera i czasem UTC
+  // 1. NAGĂ„Ä…Ă‚ÂĂ„â€šĂ˘â‚¬Ĺ›WEK: Belka z menu, nazwÄ‚â€žĂ˘â‚¬Â¦ serwera i czasem UTC
   tft.fillRect(0, 0, 480, 32, TFT_RADIO_ORANGE);
   tft.setTextColor(TFT_BLACK);
 
   // IKONA MENU (3D)
   drawHamburgerMenuButton3D(5, 7);
 
-  // Nazwa serwera APRS-IS - przesuniÄta w prawo (x=35 zamiast 5), by zrobiÄ‡ miejsce na menu
+  // Nazwa serwera APRS-IS - przesuniĂ„ta w prawo (x=35 zamiast 5), by zrobiĂ„â€ˇ miejsce na menu
   tft.setTextSize(2);
   tft.setCursor(35, 8);
   tft.print("APRS-IS");
 
-  // Ikona WiFi w gÃ³rnym prawym rogu
+  // Ikona WiFi w gĂÂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
   
   // Ikona baterii obok ikony WiFi
   drawBatteryIcon(420, 4);
 
-  // ZEGAR USUNIÄTY z nagÅ‚Ã³wka APRS-IS
+  // ZEGAR USUNIĂ„TY z nagĂ…â€šĂÂłwka APRS-IS
 
-  // 2. NAGÅÃ“WKI TABELI
+  // 2. NAGĂ…ÂĂâ€śWKI TABELI
   int yPos = 40;
   const bool enlarged = isDxTableEnlarged();
   tft.setTextColor(TFT_DARKGREY);
@@ -7012,7 +7136,7 @@ void drawAprsRadar() {
   tft.setCursor(aprsBottomX, tft.height() - 20);
   tft.print(aprsTitleBottom);
 
-  // ZEGAR W PRAWIN GÓRNYM ROGU
+  // ZEGAR W PRAWIN GĂ“RNYM ROGU
   struct tm timeinfo;
   if (getTimeWithTimezone(&timeinfo)) {
     char timeBuffer[6];
@@ -7066,22 +7190,22 @@ static void setPropagationBandDefaults(PropagationData &out) {
 static String convertPropagationTimeToLocal(const String &utcTime) {
   if (utcTime.length() == 0 || utcTime == "--") return utcTime;
   
-  // Sprawdź czy zawiera "UTC" - jeśli nie, zwróć oryginał
+  // SprawdĹş czy zawiera "UTC" - jeĹ›li nie, zwrĂłÄ‡ oryginaĹ‚
   int utcPos = utcTime.indexOf("UTC");
   if (utcPos < 0) return utcTime;
   
-  // Sprawdź czy zawiera "at" - format: "DD Mon YYYY at HHMM UTC"
+  // SprawdĹş czy zawiera "at" - format: "DD Mon YYYY at HHMM UTC"
   int atPos = utcTime.indexOf(" at ");
   if (atPos < 0) return utcTime;
   
-  // Wyciągnij czas HHMM
+  // WyciÄ…gnij czas HHMM
   int timeStart = atPos + 4; // Po " at "
-  String timePart = utcTime.substring(timeStart, utcPos - 1); // -1 aby usunąć spację przed UTC
+  String timePart = utcTime.substring(timeStart, utcPos - 1); // -1 aby usunÄ…Ä‡ spacjÄ™ przed UTC
   timePart.trim();
   
   if (timePart.length() < 4) return utcTime;
   
-  // Parsuj godzinę i minutę
+  // Parsuj godzinÄ™ i minutÄ™
   int hour = timePart.substring(0, 2).toInt();
   int minute = timePart.substring(2, 4).toInt();
   
@@ -7095,7 +7219,7 @@ static String convertPropagationTimeToLocal(const String &utcTime) {
   }
   int localHour = hour + timezoneHours + dstOffset;
   
-  // Obsługa przejścia przez północ
+  // ObsĹ‚uga przejĹ›cia przez pĂłĹ‚noc
   while (localHour < 0) localHour += 24;
   while (localHour >= 24) localHour -= 24;
   
@@ -7103,7 +7227,7 @@ static String convertPropagationTimeToLocal(const String &utcTime) {
   String hh = (localHour < 10 ? "0" : "") + String(localHour);
   String mm = (minute < 10 ? "0" : "") + String(minute);
   
-  // Zwróć sformatowany czas lokalny zachowując datę
+  // ZwrĂłÄ‡ sformatowany czas lokalny zachowujÄ…c datÄ™
   String datePart = utcTime.substring(0, atPos);
   return datePart + " " + hh + mm + " LOC";
 }
@@ -7160,7 +7284,7 @@ bool fetchPropagationData() {
     return false;
   }
 
-  WiFiClientSecure client;
+  static WiFiClientSecure client;
 
   client.setInsecure();
 
@@ -7191,7 +7315,7 @@ bool fetchPropagationData() {
 }
 
 void updateScreen3Clock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka propagacji (Sun Spots)
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka propagacji (Sun Spots)
   return;
 }
 
@@ -7324,13 +7448,13 @@ void drawSunSpots() {
   tft.setCursor(35, 8);
   tft.print((tftLanguage == TFT_LANG_EN) ? "PROPAGATION" : "PROPAGACJA");
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
   
   // Ikona baterii obok ikony WiFi
   drawBatteryIcon(420, 4);
 
-  // Wyłączono - zegar tylko na górnym pasku
+  // WyĹ‚Ä…czono - zegar tylko na gĂłrnym pasku
   /*
   struct tm timeinfo;
   if (getLocalTime(&timeinfo, 1)) {
@@ -7344,7 +7468,7 @@ void drawSunSpots() {
 
   drawSunSpotsBody();
 
-  // Strzałki nawigacyjne - duże, blisko krawędzi (takie same na wszystkich ekranach)
+  // StrzaĹ‚ki nawigacyjne - duĹĽe, blisko krawÄ™dzi (takie same na wszystkich ekranach)
   int arrowY = 290;
   int arrowSize = 12;
   tft.fillTriangle(15, arrowY, 15 + arrowSize, arrowY - arrowSize, 15 + arrowSize, arrowY + arrowSize, TFT_RADIO_ORANGE);
@@ -7356,7 +7480,7 @@ void drawSunSpots() {
 }
 
 void updateScreen4Clock() {
-  // ZEGAR WYŁĄCZONY - usunięty z nagłówka propagacji (Sun Spots)
+  // ZEGAR WYĹÄ„CZONY - usuniÄ™ty z nagĹ‚Ăłwka propagacji (Sun Spots)
   return;
 }
 
@@ -7395,11 +7519,11 @@ uint32_t computeScreen4Signature() {
 }
 
 void drawBandInfoBody() {
-  const int bodyTop = 45; // Zaczynamy niżej, pod linią
+  const int bodyTop = 45; // Zaczynamy niĹĽej, pod liniÄ…
   const int bodyBottom = 280;
   tft.fillRect(0, bodyTop, 480, bodyBottom - bodyTop, TFT_BLACK);
 
-  // === GÓRNA SEKCJA - INDEKSY SŁONECZNE (3 kolumny) ===
+  // === GĂ“RNA SEKCJA - INDEKSY SĹONECZNE (3 kolumny) ===
   int yPos = bodyTop + 5;
   int lineHeight = 22;
 
@@ -7413,14 +7537,14 @@ void drawBandInfoBody() {
   tft.setTextColor(TFT_WHITE);
   tft.print(propagationData.sfi.length() ? propagationData.sfi : "--");
 
-  // A-idx (środek)
+  // A-idx (Ĺ›rodek)
   tft.setTextColor(TFT_CYAN);
   tft.setCursor(130, yPos);
   tft.print("A-idx:");
   tft.setTextColor(TFT_WHITE);
   tft.print(propagationData.aindex.length() ? propagationData.aindex : "--");
 
-  // MUF w niebieskiej ramce z żółtym tekstem
+  // MUF w niebieskiej ramce z ĹĽĂłĹ‚tym tekstem
   tft.fillRect(280, yPos - 2, 145, 22, TFT_BLUE);
   tft.setTextColor(TFT_YELLOW);
   tft.setCursor(290, yPos);
@@ -7437,28 +7561,28 @@ void drawBandInfoBody() {
   tft.setTextColor(TFT_WHITE);
   tft.print(propagationData.ssn.length() ? propagationData.ssn : "--");
 
-  // K-idx (środek)
+  // K-idx (Ĺ›rodek)
   tft.setTextColor(TFT_CYAN);
   tft.setCursor(130, yPos);
   tft.print("K-idx:");
   tft.setTextColor(TFT_WHITE);
   tft.print(propagationData.kindex.length() ? propagationData.kindex : "--");
 
-  // X-Ray w niebieskiej ramce z żółtym tekstem
+  // X-Ray w niebieskiej ramce z ĹĽĂłĹ‚tym tekstem
   tft.fillRect(280, yPos - 2, 100, 22, TFT_BLUE);
   tft.setTextColor(TFT_YELLOW);
   tft.setCursor(290, yPos);
   String xrayText = propagationData.xray.length() ? propagationData.xray : "--";
   tft.print("X-Ray:" + xrayText);
 
-  // === ŚRODKOWA SEKCJA - TABELA PASMA (lewa strona) ===
+  // === ĹšRODKOWA SEKCJA - TABELA PASMA (lewa strona) ===
   yPos += lineHeight + 10;
   int tableTop = yPos;
 
-  // Ramka wokół tabeli
+  // Ramka wokĂłĹ‚ tabeli
   tft.drawRoundRect(10, tableTop - 5, 260, 140, 5, TFT_DARKGREY);
 
-  // Nagłówki tabeli
+  // NagĹ‚Ăłwki tabeli
   tft.setTextSize(2);
   tft.setTextColor(TFT_YELLOW);
   tft.setCursor(15, yPos);
@@ -7475,7 +7599,7 @@ void drawBandInfoBody() {
   // Wiersze tabeli (4 pasma)
   int rowHeight = 30;
   for (int i = 0; i < 4; i++) {
-    // Podświetlenie co drugi wiersz (w ramce)
+    // PodĹ›wietlenie co drugi wiersz (w ramce)
     if (i % 2 == 0) {
       tft.fillRect(12, yPos - 2, 256, rowHeight - 2, 0x1082); // Ciemnoszary
     }
@@ -7487,7 +7611,7 @@ void drawBandInfoBody() {
     tft.setCursor(15, yPos);
     tft.print(propagationData.hfBandLabel[i]);
 
-    // Day - kolor w zależności od warunku
+    // Day - kolor w zaleĹĽnoĹ›ci od warunku
     String dayCond = propagationData.hfBandDay[i];
     tft.setTextColor(conditionColor(dayCond));
     tft.setCursor(105, yPos);
@@ -7503,12 +7627,12 @@ void drawBandInfoBody() {
   }
 
   // === PRAWA STRONA - S/N, Aurora, Ikona ===
-  // Pozycja ikony (bardziej w lewo i niżej)
+  // Pozycja ikony (bardziej w lewo i niĹĽej)
   int iconX = 340;
   int iconY = tableTop + 90;
-  int iconSize = 50; // Zakładamy rozmiar ikony 50x50
+  int iconSize = 50; // ZakĹ‚adamy rozmiar ikony 50x50
 
-  // S/N - wyśrodkowane nad ikoną
+  // S/N - wyĹ›rodkowane nad ikonÄ…
   tft.setTextSize(2);
   tft.setTextColor(TFT_CYAN);
   String snText = "S/N:";
@@ -7520,7 +7644,7 @@ void drawBandInfoBody() {
   tft.setTextColor(TFT_WHITE);
   tft.print(snVal);
 
-  // Aurora - wyśrodkowane nad ikoną
+  // Aurora - wyĹ›rodkowane nad ikonÄ…
   String auroraText = "Aurora:";
   String auroraVal = "2";
   int auroraWidth = tft.textWidth(auroraText) + tft.textWidth(auroraVal);
@@ -7531,22 +7655,22 @@ void drawBandInfoBody() {
   tft.setTextColor(TFT_WHITE);
   tft.print(auroraVal);
 
-  // === IKONA PROPAGACJI (słońce/chmura) ===
+  // === IKONA PROPAGACJI (sĹ‚oĹ„ce/chmura) ===
   int kIndexVal = propagationData.kindex.toInt();
   String propIcon;
   if (kIndexVal < 3) {
-    propIcon = "/icon50/800.bmp"; // Słońce - dobre warunki
+    propIcon = "/icon50/800.bmp"; // SĹ‚oĹ„ce - dobre warunki
   } else if (kIndexVal < 5) {
-    propIcon = "/icon50/801.bmp"; // Częściowe zachmurzenie - średnie
+    propIcon = "/icon50/801.bmp"; // CzÄ™Ĺ›ciowe zachmurzenie - Ĺ›rednie
   } else {
-    propIcon = "/icon50/200.bmp"; // Burza - słabe warunki
+    propIcon = "/icon50/200.bmp"; // Burza - sĹ‚abe warunki
   }
   if (littleFsReady && LittleFS.exists(propIcon)) {
     drawBmpFromFS(propIcon, iconX, iconY);
   }
 
-  // === DOLNA SEKCJA - INFO O ZAMKNIĘTYCH PASMACH ===
-  yPos = tableTop + 145; // Pod tabelą
+  // === DOLNA SEKCJA - INFO O ZAMKNIÄTYCH PASMACH ===
+  yPos = tableTop + 145; // Pod tabelÄ…
   tft.setTextSize(1);
   tft.setTextColor(TFT_RED);
   tft.setCursor(10, yPos);
@@ -7560,7 +7684,7 @@ void drawBandInfoBody() {
   tft.setCursor(155, yPos);
   tft.print("Es Afr Band Closed");
 
-  // === STATUS BŁĘDU ===
+  // === STATUS BĹÄDU ===
   if (!propagationData.valid) {
     tft.setTextSize(1);
     tft.setTextColor(TFT_RED);
@@ -7576,7 +7700,7 @@ void updateScreen4Data() {
     return;
   }
 
-  // Wyłączono - zegar tylko na górnym pasku
+  // WyĹ‚Ä…czono - zegar tylko na gĂłrnym pasku
   // updateScreen4Clock();
 
   static uint32_t lastSig = 0;
@@ -7592,26 +7716,26 @@ void updateScreen4Data() {
 void drawBandInfo() {
   tft.fillScreen(TFT_BLACK);
 
-  // Nagłówek w kolorze żółtym/złotym na czarnym tle (jak na zdjęciu)
+  // NagĹ‚Ăłwek w kolorze ĹĽĂłĹ‚tym/zĹ‚otym na czarnym tle (jak na zdjÄ™ciu)
   tft.setTextSize(2);
   tft.setTextColor(TFT_GOLD);
   tft.setCursor(120, 10);
   tft.print("SOLAR PROPAGATION INDEX");
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
   
   // Ikona baterii obok ikony WiFi
   drawBatteryIcon(420, 4);
 
-  // Linia pod nagłówkiem
+  // Linia pod nagĹ‚Ăłwkiem
   tft.drawLine(10, 35, 470, 35, TFT_DARKGREY);
 
   // ZEGAR - rysowany osobno przez updateBandInfoClock()
 
   drawBandInfoBody();
 
-  // Strzałki nawigacyjne - duże, blisko krawędzi (takie same na wszystkich ekranach)
+  // StrzaĹ‚ki nawigacyjne - duĹĽe, blisko krawÄ™dzi (takie same na wszystkich ekranach)
   int arrowY = 290;
   int arrowSize = 12;
   tft.fillTriangle(15, arrowY, 15 + arrowSize, arrowY - arrowSize, 15 + arrowSize, arrowY + arrowSize, TFT_RADIO_ORANGE);
@@ -7656,83 +7780,90 @@ bool fetchWeatherData() {
     weatherData.detailValid[i] = false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  {
+    // Zakres { } jest celowy: HTTPClient tego pierwszego (podstawowego)
+    // zapytania musi zostaÄ‡ w peĹ‚ni zniszczony ZANIM wywoĹ‚amy
+    // fetchWeatherForecast()/fetchAirPollutionData() poniĹĽej.
+    // WiFiClientSecure jest static - reuse zamiast nowy za kazdym razem,
+    // zeby nie wyczerpywac pamieci ESP32 TLS kontekstami (~20KB kazdy).
+    static WiFiClientSecure client;
+    client.setInsecure();
 
-  String langParam = (tftLanguage == TFT_LANG_EN) ? "en" : "pl";
-  String url = "https://api.openweathermap.org/data/2.5/weather?lat=" +
-               String(lat, 4) + "&lon=" + String(lon, 4) +
-               "&appid=" + weatherApiKey + "&units=metric&lang=" + langParam;
+    String langParam = (tftLanguage == TFT_LANG_EN) ? "en" : "pl";
+    String url = "https://api.openweathermap.org/data/2.5/weather?lat=" +
+                 String(lat, 4) + "&lon=" + String(lon, 4) +
+                 "&appid=" + weatherApiKey + "&units=metric&lang=" + langParam;
 
-  HTTPClient http;
-  http.setTimeout(2500);
-  if (!http.begin(client, url)) {
-    weatherData.lastError = "HTTP begin failed";
-    weatherData.valid = false;
-    return false;
-  }
+    HTTPClient http;
+    http.setTimeout(2500);
+    if (!http.begin(client, url)) {
+      weatherData.lastError = "HTTP begin failed";
+      weatherData.valid = false;
+      return false;
+    }
 
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    weatherData.lastError = "HTTP " + String(httpCode);
-    weatherData.valid = false;
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK) {
+      weatherData.lastError = "HTTP " + String(httpCode);
+      weatherData.valid = false;
+      http.end();
+      return false;
+    }
+
+    WiFiClient *stream = http.getStreamPtr();
+
+    DynamicJsonDocument filter(512);
+    filter["cod"] = true;
+    filter["message"] = true;
+    filter["name"] = true;
+    filter["weather"][0]["description"] = true;
+    filter["weather"][0]["icon"] = true;
+    filter["weather"][0]["id"] = true;
+    filter["main"]["temp"] = true;
+    filter["main"]["humidity"] = true;
+    filter["main"]["pressure"] = true;
+    filter["wind"]["speed"] = true;
+
+    DynamicJsonDocument doc(1536);
+    DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
     http.end();
-    return false;
-  }
+    if (err) {
+      weatherData.lastError = "JSON error";
+      weatherData.valid = false;
+      return false;
+    }
 
-  WiFiClient *stream = http.getStreamPtr();
+    int cod = doc["cod"] | 0;
+    if (cod != 200) {
+      String msg = doc["message"] | "";
+      weatherData.lastError = msg.length() ? msg : "API error";
+      weatherData.valid = false;
+      return false;
+    }
 
-  DynamicJsonDocument filter(512);
-  filter["cod"] = true;
-  filter["message"] = true;
-  filter["name"] = true;
-  filter["weather"][0]["description"] = true;
-  filter["weather"][0]["icon"] = true;
-  filter["weather"][0]["id"] = true;
-  filter["main"]["temp"] = true;
-  filter["main"]["humidity"] = true;
-  filter["main"]["pressure"] = true;
-  filter["wind"]["speed"] = true;
-
-  DynamicJsonDocument doc(1536);
-  DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-  http.end();
-  if (err) {
-    weatherData.lastError = "JSON error";
-    weatherData.valid = false;
-    return false;
-  }
-
-  int cod = doc["cod"] | 0;
-  if (cod != 200) {
-    String msg = doc["message"] | "";
-    weatherData.lastError = msg.length() ? msg : "API error";
-    weatherData.valid = false;
-    return false;
-  }
-
-  String desc = doc["weather"][0]["description"] | "";
-  String cityName = doc["name"] | "";
-  String icon = doc["weather"][0]["icon"] | ""; // 01d / 01n itp. do wykrycia pory dnia
-  int weatherId = doc["weather"][0]["id"] | 800; // pobieranie kodu pogody
-  float temp = doc["main"]["temp"] | 0.0f;
-  int humidity = doc["main"]["humidity"] | 0;
-  int pressure = doc["main"]["pressure"] | 0;
-  float wind = doc["wind"]["speed"] | 0.0f;
+    String desc = doc["weather"][0]["description"] | "";
+    String cityName = doc["name"] | "";
+    String icon = doc["weather"][0]["icon"] | ""; // 01d / 01n itp. do wykrycia pory dnia
+    int weatherId = doc["weather"][0]["id"] | 800; // pobieranie kodu pogody
+    float temp = doc["main"]["temp"] | 0.0f;
+    int humidity = doc["main"]["humidity"] | 0;
+    int pressure = doc["main"]["pressure"] | 0;
+    float wind = doc["wind"]["speed"] | 0.0f;
 
 
-  if (desc.equalsIgnoreCase("zachmurzenie umiarkowane")) {
-    desc = "zachmurzenie";
-  }
+    if (desc.equalsIgnoreCase("zachmurzenie umiarkowane")) {
+      desc = "zachmurzenie";
+    }
 
-  weatherData.description = desc.length() ? desc : "--";
-  weatherData.cityName = cityName;
-  weatherData.iconCode = icon;
-  weatherData.weatherId = weatherId; // kod pogody
-  weatherData.tempC = temp;
-  weatherData.humidity = humidity;
-  weatherData.pressure = pressure;
-  weatherData.windMs = wind;
+    weatherData.description = desc.length() ? desc : "--";
+    weatherData.cityName = cityName;
+    weatherData.iconCode = icon;
+    weatherData.weatherId = weatherId; // kod pogody
+    weatherData.tempC = temp;
+    weatherData.humidity = humidity;
+    weatherData.pressure = pressure;
+    weatherData.windMs = wind;
+  } // <- client/http/doc znikajÄ… tutaj, zwalniajÄ…c pamiÄ™Ä‡ TLS i JSON
 
   struct tm timeinfo;
   if (getLocalTime(&timeinfo, 1)) {
@@ -7747,10 +7878,11 @@ bool fetchWeatherData() {
   weatherData.lastError = "";
   weatherData.fetchedAtMs = millis();
 
-  // Prognozy (3h i jutro)
+  // Prognozy (3h i jutro) - osobne poĹ‚Ä…czenie HTTPS, uruchamiane dopiero
+  // teraz, gdy powyĹĽsze poĹ‚Ä…czenie zostaĹ‚o w peĹ‚ni zamkniÄ™te.
   fetchWeatherForecast(lat, lon);
 
-  // Pobierz dane o jakoÄąâ€şci powietrza (PM2.5 i PM10)
+  // Pobierz dane o jakoĹ›ci powietrza (PM2.5 i PM10)
   fetchAirPollutionData(lat, lon);
 
   return true;
@@ -7761,7 +7893,7 @@ bool fetchWeatherForecast(double lat, double lon) {
     return false;
   }
 
-  WiFiClientSecure client;
+  static WiFiClientSecure client;
   client.setInsecure();
 
   String langParam = (tftLanguage == TFT_LANG_EN) ? "en" : "pl";
@@ -7822,7 +7954,7 @@ bool fetchWeatherForecast(double lat, double lon) {
   };
   const int fallbackIdx[WeatherData::DETAIL_COLS] = {0, 1, 8, 16, 24};
   
-  // Uwzględnij DST (czas letni) w obliczeniach strefy czasowej
+  // UwzglÄ™dnij DST (czas letni) w obliczeniach strefy czasowej
   struct tm utcTm;
   time_t nowTimeT = (time_t)nowUnix;
   gmtime_r(&nowTimeT, &utcTm);
@@ -7847,8 +7979,8 @@ bool fetchWeatherForecast(double lat, double lon) {
   for (uint8_t slot = 0; slot < WeatherData::DETAIL_COLS; slot++) {
     int chosenIdx = -1;
 
-    // Dla slotów 0 i 1 (+3h, +6h) - znajdź najbliższy czas do target
-    // Dla slotów 2+ (dni) - znajdź najlepsze dopasowanie dnia (południe)
+    // Dla slotĂłw 0 i 1 (+3h, +6h) - znajdĹş najbliĹĽszy czas do target
+    // Dla slotĂłw 2+ (dni) - znajdĹş najlepsze dopasowanie dnia (poĹ‚udnie)
     if (slot >= 2 && nowUnix > 100000L) {
       const long targetDayStartLocal = baseLocalDayStart + (long)(slot - 1) * 86400L;
       const long targetNoonLocal = targetDayStartLocal + 12L * 3600L;
@@ -7885,7 +8017,7 @@ bool fetchWeatherForecast(double lat, double lon) {
       }
     }
 
-    // Dla slotów 0 i 1 (+3h, +6h) lub jeśli nie znaleziono dopasowania dnia
+    // Dla slotĂłw 0 i 1 (+3h, +6h) lub jeĹ›li nie znaleziono dopasowania dnia
     if (chosenIdx < 0 && nowUnix > 100000L) {
       long target = nowUnix + targetOffsetsSec[slot];
       long bestDiff = 0x7FFFFFFF;
@@ -7904,13 +8036,13 @@ bool fetchWeatherForecast(double lat, double lon) {
       }
     }
 
-    // Fallback gdy czas niezsynchronizowany lub brak dopasowania - użyj indeksów fallback
+    // Fallback gdy czas niezsynchronizowany lub brak dopasowania - uĹĽyj indeksĂłw fallback
     if (chosenIdx < 0) {
       int idx = fallbackIdx[slot];
       if (idx < (int)list.size()) {
         chosenIdx = idx;
       } else if (list.size() > 0) {
-        chosenIdx = list.size() - 1;  // Ostatni dostępny element
+        chosenIdx = list.size() - 1;  // Ostatni dostÄ™pny element
       }
     }
 
@@ -7999,7 +8131,7 @@ bool fetchAirPollutionData(double lat, double lon) {
     return false;
   }
 
-  WiFiClientSecure client;
+  static WiFiClientSecure client;
   client.setInsecure();
 
   String url = "https://api.openweathermap.org/data/2.5/air_pollution?lat=" +
@@ -8031,7 +8163,7 @@ bool fetchAirPollutionData(double lat, double lon) {
     return false;
   }
 
-  // Pobierz wartoÄąâ€şci PM2.5 i PM10 z komponentÄ‚łw
+  // Pobierz wartoĂ„Ä…Ă˘â‚¬Ĺźci PM2.5 i PM10 z komponentĂ„â€šĹ‚w
   JsonArray list = doc["list"].as<JsonArray>();
   if (list.isNull() || list.size() == 0) {
     return false;
@@ -8053,20 +8185,20 @@ bool fetchAirPollutionData(double lat, double lon) {
   return true;
 }
 
-// Funkcja okreÄąâ€şlajĂ„â€¦ca kolor na podstawie wartoÄąâ€şci PM2.5
+// Funkcja okreĂ„Ä…Ă˘â‚¬ĹźlajÄ‚â€žĂ˘â‚¬Â¦ca kolor na podstawie wartoĂ„Ä…Ă˘â‚¬Ĺźci PM2.5
 uint16_t getPM25Color(float pm25) {
   if (pm25 <= 12) return TFT_GREEN;      // Dobra
   if (pm25 <= 35) return TFT_YELLOW;     // Umiarkowana
-  if (pm25 <= 55) return TFT_ORANGE;     // Niezdrowa dla wraÄąÄ˝liwych
+  if (pm25 <= 55) return TFT_ORANGE;     // Niezdrowa dla wraĂ„Ä…Ă„Ëťliwych
   if (pm25 <= 150) return TFT_RED;       // Niezdrowa
   return 0xF800; // Ciemny czerwony - Bardzo niezdrowa
 }
 
-// Funkcja okreÄąâ€şlajĂ„â€¦ca kolor na podstawie wartoÄąâ€şci PM10
+// Funkcja okreĂ„Ä…Ă˘â‚¬ĹźlajÄ‚â€žĂ˘â‚¬Â¦ca kolor na podstawie wartoĂ„Ä…Ă˘â‚¬Ĺźci PM10
 uint16_t getPM10Color(float pm10) {
   if (pm10 <= 20) return TFT_GREEN;      // Dobra
   if (pm10 <= 50) return TFT_YELLOW;     // Umiarkowana
-  if (pm10 <= 100) return TFT_ORANGE;   // Niezdrowa dla wraÄąÄ˝liwych
+  if (pm10 <= 100) return TFT_ORANGE;   // Niezdrowa dla wraĂ„Ä…Ă„Ëťliwych
   if (pm10 <= 200) return TFT_RED;      // Niezdrowa
   return 0xF800; // Ciemny czerwony - Bardzo niezdrowa
 }
@@ -8170,7 +8302,7 @@ uint32_t computeScreen5Signature() {
   return hash;
 }
 
-// Funkcja pomocnicza: Kolor wiatru zaleÄąÄ˝ny od prĂ„â„˘dkoÄąâ€şci (m/s)
+// Funkcja pomocnicza: Kolor wiatru zaleĂ„Ä…Ă„Ëťny od prÄ‚â€žĂ˘â€žËdkoĂ„Ä…Ă˘â‚¬Ĺźci (m/s)
 uint16_t getWindColor(float speed) {
   if (speed < 5.0)  return TFT_GREEN;       // Bezpiecznie
   if (speed < 10.0) return TFT_YELLOW;      // Umiarkowanie
@@ -8178,14 +8310,14 @@ uint16_t getWindColor(float speed) {
   return TFT_RED;                           // Niebezpieczny dla anten
 }
 
-// Mapowanie kodu OWM na plik ikony (zgodnie z przygotowaną listą)
+// Mapowanie kodu OWM na plik ikony (zgodnie z przygotowanÄ… listÄ…)
 String weatherIconPathForId(int id, bool isNight) {
   const String base = "/icon50/";
 
   // 2xx burza
   if (id >= 200 && id <= 232) return base + "200.bmp";
 
-  // 3xx mżawka
+  // 3xx mĹĽawka
   if (id >= 300 && id <= 321) return base + "300.bmp";
 
   // 5xx deszcz
@@ -8196,17 +8328,17 @@ String weatherIconPathForId(int id, bool isNight) {
     return base + "520.bmp";
   }
 
-  // 6xx śnieg
+  // 6xx Ĺ›nieg
   if (id >= 600 && id <= 622) {
     if (id == 600 || id == 601 || id == 602 || id == 620 || id == 621 || id == 622) return base + "600.bmp";
-    // 611..616 (także 613/615/616) -> 611
+    // 611..616 (takĹĽe 613/615/616) -> 611
     return base + "611.bmp";
   }
 
   // 7xx atmosfera
   if (id >= 700 && id <= 781) return base + "700.bmp";
 
-  // 800 clear (dzień/noc)
+  // 800 clear (dzieĹ„/noc)
   if (id == 800) return base + (isNight ? "800n.bmp" : "800.bmp");
 
   // 80x chmury
@@ -8220,7 +8352,7 @@ String weatherIconPathForId(int id, bool isNight) {
 void drawWeatherIcon(int x, int y, int weatherId, String desc) {
   desc.toLowerCase();
 
-  // Dzień/noc z ikony OWM (np. 10d/10n). Jeśli brak, fallback na czas lokalny.
+  // DzieĹ„/noc z ikony OWM (np. 10d/10n). JeĹ›li brak, fallback na czas lokalny.
   bool isNight = false;
   if (weatherData.iconCode.endsWith("n")) {
     isNight = true;
@@ -8235,14 +8367,14 @@ void drawWeatherIcon(int x, int y, int weatherId, String desc) {
 
   String iconFile = weatherIconPathForId(weatherId, isNight);
 
-  // Najpierw próbujemy gotową ikonę BMP
+  // Najpierw prĂłbujemy gotowÄ… ikonÄ™ BMP
   if (drawBmpFromFS(iconFile, x - 25, y - 25)) {
     return;
   }
 
   // Fallback: stare ikonki rysowane na podstawie opisu (gdy brak pliku)
   if (desc.indexOf("slon") >= 0 || desc.indexOf("clear") >= 0 || desc.indexOf("pogod") >= 0) {
-    tft.fillCircle(x, y, 18, TFT_YELLOW); // Słońce
+    tft.fillCircle(x, y, 18, TFT_YELLOW); // SĹ‚oĹ„ce
     for(int i=0; i<360; i+=45) {
        float rad = i * 0.01745;
        tft.drawLine(x+cos(rad)*22, y+sin(rad)*22, x+cos(rad)*32, y+sin(rad)*32, TFT_YELLOW);
@@ -8250,29 +8382,29 @@ void drawWeatherIcon(int x, int y, int weatherId, String desc) {
   } 
   else if (desc.indexOf("burz") >= 0 || desc.indexOf("thunder") >= 0) {
     tft.fillCircle(x, y-5, 12, TFT_DARKGREY); // Chmura burzowa
-    tft.fillTriangle(x+2, y+8, x+10, y+8, x+4, y+22, TFT_YELLOW); // Błysk
+    tft.fillTriangle(x+2, y+8, x+10, y+8, x+4, y+22, TFT_YELLOW); // BĹ‚ysk
   }
   else if (desc.indexOf("mza") >= 0 || desc.indexOf("drizzle") >= 0) {
-    tft.fillCircle(x-10, y+5, 12, TFT_LIGHTGREY); // Chmura + mgławka
+    tft.fillCircle(x-10, y+5, 12, TFT_LIGHTGREY); // Chmura + mgĹ‚awka
     tft.fillCircle(x+10, y+5, 12, TFT_LIGHTGREY);
     tft.fillCircle(x, y-5, 15, TFT_LIGHTGREY);
     tft.drawLine(x-6, y+10, x-8, y+16, TFT_CYAN);
     tft.drawLine(x+2, y+10, x, y+16, TFT_CYAN);
   }
   else if (desc.indexOf("snieg") >= 0 || desc.indexOf("snow") >= 0) {
-    tft.fillCircle(x, y-5, 12, TFT_LIGHTGREY); // Chmura + śnieg
+    tft.fillCircle(x, y-5, 12, TFT_LIGHTGREY); // Chmura + Ĺ›nieg
     tft.drawLine(x-6, y+12, x-2, y+16, TFT_WHITE);
     tft.drawLine(x-2, y+12, x-6, y+16, TFT_WHITE);
     tft.drawLine(x+2, y+12, x+6, y+16, TFT_WHITE);
     tft.drawLine(x+6, y+12, x+2, y+16, TFT_WHITE);
   }
   else if (desc.indexOf("mg") >= 0 || desc.indexOf("mist") >= 0 || desc.indexOf("fog") >= 0 || desc.indexOf("haze") >= 0) {
-    tft.drawLine(x-18, y-2, x+18, y-2, TFT_LIGHTGREY); // Mgła
+    tft.drawLine(x-18, y-2, x+18, y-2, TFT_LIGHTGREY); // MgĹ‚a
     tft.drawLine(x-20, y+4, x+20, y+4, TFT_LIGHTGREY);
     tft.drawLine(x-16, y+10, x+16, y+10, TFT_LIGHTGREY);
   }
   else if (desc.indexOf("sleet") >= 0 || desc.indexOf("deszcz ze sniegiem") >= 0) {
-    tft.fillCircle(x, y-5, 12, TFT_LIGHTGREY); // Deszcz ze śniegiem
+    tft.fillCircle(x, y-5, 12, TFT_LIGHTGREY); // Deszcz ze Ĺ›niegiem
     tft.drawLine(x-6, y+10, x-8, y+18, TFT_CYAN);
     tft.drawLine(x+2, y+10, x, y+18, TFT_CYAN);
     tft.drawLine(x+6, y+12, x+2, y+16, TFT_WHITE);
@@ -8289,11 +8421,11 @@ void drawWeatherIcon(int x, int y, int weatherId, String desc) {
     tft.drawLine(x+5, y+10, x+2, y+20, TFT_CYAN);
     tft.drawLine(x, y+12, x-3, y+22, TFT_CYAN);
   } else {
-    tft.drawCircle(x, y, 15, TFT_WHITE); // Ikona domyślna (okrąg)
+    tft.drawCircle(x, y, 15, TFT_WHITE); // Ikona domyĹ›lna (okrÄ…g)
   }
 }
 
-// Główna funkcja ciała ekranu pogodowego
+// GĹ‚Ăłwna funkcja ciaĹ‚a ekranu pogodowego
 void drawWeatherBody() {
   const int bodyTop = 32;
   const int bodyBottom = 220;
@@ -8315,15 +8447,15 @@ void drawWeatherBody() {
   // Opis pogody z polskimi znakami, czcionka VLW 20px
   bool fontLoaded = false;
   int descY = 105;
-  int descX = 400; // Przesunięte bardziej w prawo dla 480px
-  if (littleFsReady && LittleFS.exists(ROBOTO_FONT12_FILE)) {
+  int descX = 400; // PrzesuniÄ™te bardziej w prawo dla 480px
+  if (littleFsReady && LittleFS.exists(ROBOTO_FONT12_FILE) && ESP.getFreeHeap() > 80000) {
     tft.loadFont(ROBOTO_FONT12_NAME, LittleFS);
     fontLoaded = true;
     tft.setTextColor(TFT_LIGHTGREY);
     tft.setTextDatum(MC_DATUM);
     tft.drawString(weatherData.description, descX, descY);
     tft.setCursor(20, 120);
-    tft.print(tr(TR_HUMIDITY));  // Font VLW obsługuje polskie znaki
+    tft.print(tr(TR_HUMIDITY));  // Font VLW obsĹ‚uguje polskie znaki
     tft.setCursor(20, 144);
     tft.print(tr(TR_PRESSURE));
     tft.setCursor(20, 168);
@@ -8346,30 +8478,30 @@ void drawWeatherBody() {
     tft.print(sanitizePolishToAscii(String(tr(TR_WIND))));
   }
 
-  // 2. TEMPERATURA (Lewa strona) - większa dla 480px
+  // 2. TEMPERATURA (Lewa strona) - wiÄ™ksza dla 480px
   tft.setTextSize(2);
   tft.setTextColor(TFT_DARKGREY);
   tft.setCursor(20, 45);
   tft.print(sanitizePolishToAscii(String(tr(TR_TEMPERATURE))));
 
-  tft.setTextSize(6); // Większa temperatura
+  tft.setTextSize(6); // WiÄ™ksza temperatura
   tft.setTextColor(TFT_CYAN);
   tft.setCursor(20, 70);
   tft.print(String(weatherData.tempC, 1));
   tft.setTextSize(3);
   tft.print(" C");
 
-  // 3. PARAMETRY SZCZEGÓŁOWE - dostosowane do 480px
+  // 3. PARAMETRY SZCZEGĂ“ĹOWE - dostosowane do 480px
   int startY = 120;
-  int valueX = 180; // Więcej miejsca na wartości
+  int valueX = 180; // WiÄ™cej miejsca na wartoĹ›ci
   
-  // WILGOTNOŚĆ
+  // WILGOTNOĹšÄ†
   tft.setTextSize(2);
   tft.setTextColor(TFT_WHITE);
   tft.setCursor(valueX, startY);
   tft.print(String(weatherData.humidity) + "%");
 
-  // CIŚNIENIE
+  // CIĹšNIENIE
   tft.setTextSize(2);
   tft.setTextColor(TFT_WHITE);
   tft.setCursor(valueX, startY + 30);
@@ -8381,12 +8513,12 @@ void drawWeatherBody() {
   tft.setCursor(valueX, startY + 60);
   tft.print(String(weatherData.windMs, 1) + " m/s");
 
-  // PM2.5 i PM10 - lepsze rozmieszczenie dla 480px
+  // PM2.5 i PM10 - lepsze rozmieszczenie dla 480px (przesuniÄ™te bardziej w prawo)
   tft.setTextSize(2);
   
   // PM2.5
   tft.setTextColor(TFT_WHITE);
-  tft.setCursor(280, startY);
+  tft.setCursor(300, startY);
   tft.print("PM2.5: ");
   uint16_t pm25Color = getPM25Color(weatherData.pm25);
   tft.setTextColor(pm25Color);
@@ -8394,7 +8526,7 @@ void drawWeatherBody() {
   
   // PM10
   tft.setTextColor(TFT_WHITE);
-  tft.setCursor(280, startY + 30);
+  tft.setCursor(300, startY + 30);
   tft.print("PM10: ");
   uint16_t pm10Color = getPM10Color(weatherData.pm10);
   tft.setTextColor(pm10Color);
@@ -8446,7 +8578,7 @@ void drawWeatherDetailPage() {
   const int bodyTop = 32;
   const int bodyBottom = 220;
   const int bodyLeft = 2;
-  const int bodyRight = 478;  // Dla wyświetlacza 480px
+  const int bodyRight = 478;  // Dla wyĹ›wietlacza 480px
   const int colCount = WeatherData::DETAIL_COLS;
   const int colW = (bodyRight - bodyLeft + 1) / colCount;
 
@@ -8468,7 +8600,7 @@ void drawWeatherDetailPage() {
   const int yNight = 98;
   const int yHum = 121;
   const int yWind = 152;
-  const int yIcon = 183;
+  const int yIcon = 192;
 
   tft.fillRect(bodyLeft, bodyTop + 2, bodyRight - bodyLeft + 1, 31, TFT_TABLE_ALT_ROW_COLOR);
 
@@ -8533,7 +8665,7 @@ void drawWeatherDetailPage() {
     tft.setCursor(cx - ((int)windText.length() * 3), yWind);
     tft.print(windText);
 
-    drawWeatherDetailIconCell(cx - 25, yIcon, weatherData.detailWeatherId[i], weatherData.detailIconCode[i]);
+    drawWeatherDetailIconCell(cx, yIcon, weatherData.detailWeatherId[i], weatherData.detailIconCode[i]);
   }
 }
 
@@ -8545,12 +8677,12 @@ static void drawWeatherFooterArea(ScreenType screenId) {
     return;
   }
 
-  // WIZUALIZACJA JAKOŚCI POWIETRZA (AQI) - nad napisem lokalizacji
+  // WIZUALIZACJA JAKOĹšCI POWIETRZA (AQI) - nad napisem lokalizacji
   if (weatherData.valid) {
     const int barY = 222; // Pozycja paska AQI (nad tekstem lokalizacji)
     const int barWidth = 100;
     const int barHeight = 6;
-    const int barX = 240 - (barWidth / 2); // Wyśrodkowane
+    const int barX = 240 - (barWidth / 2); // WyĹ›rodkowane
 
     // Kolor na podstawie PM2.5 (gorsze zanieczyszczenie decyduje)
     uint16_t aqiColor = getPM25Color(weatherData.pm25);
@@ -8560,7 +8692,7 @@ static void drawWeatherFooterArea(ScreenType screenId) {
     else if (weatherData.pm25 <= 55) aqiLabel += "NIEZDROWA";
     else aqiLabel += "SZKODLIWA";
 
-    // Rysuj pasek jakości powietrza
+    // Rysuj pasek jakoĹ›ci powietrza
     tft.fillRect(barX, barY, barWidth, barHeight, TFT_DARKGREY);
     tft.fillRect(barX + 1, barY + 1, barWidth - 2, barHeight - 2, aqiColor);
 
@@ -8570,16 +8702,16 @@ static void drawWeatherFooterArea(ScreenType screenId) {
     tft.setCursor(5, barY);
     tft.print(aqiLabel);
 
-    // Wartości PM2.5/PM10 po prawej stronie
+    // WartoĹ›ci PM2.5/PM10 po prawej stronie (przesuniÄ™te bardziej w prawo)
     tft.setTextColor(getPM25Color(weatherData.pm25));
-    tft.setCursor(350, barY);
+    tft.setCursor(365, barY);
     tft.print("PM2.5:" + String(weatherData.pm25, 0));
     tft.setTextColor(getPM10Color(weatherData.pm10));
-    tft.setCursor(420, barY);
+    tft.setCursor(435, barY);
     tft.print("PM10:" + String(weatherData.pm10, 0));
   }
 
-  // Tekst lokalizacji (niżej, y=230 zamiast 226 aby zrobić miejsce na AQI)
+  // Tekst lokalizacji (niĹĽej, y=230 zamiast 226 aby zrobiÄ‡ miejsce na AQI)
   String cityLabel = weatherData.cityName;
   cityLabel.trim();
   if (cityLabel.length() == 0) {
@@ -8618,7 +8750,7 @@ void updateScreen5Data() {
     return;
   }
 
-  // Wyłączono - zegar rysowany przez updateWeatherClock
+  // WyĹ‚Ä…czono - zegar rysowany przez updateWeatherClock
   // updateScreen5Clock();
 
   static uint32_t lastWeatherSig = 0;
@@ -8656,7 +8788,7 @@ void drawWeather() {
   tft.setCursor(35, 8);
   tft.print(tr(TR_WEATHER));
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
 
   // ZEGAR - rysowany osobno przez updateWeatherClock()
@@ -8678,7 +8810,7 @@ void drawWeatherForecast() {
   tft.setCursor(35, 8);
   tft.print(detailHeader);
 
-  // Ikona WiFi w górnym prawym rogu
+  // Ikona WiFi w gĂłrnym prawym rogu
   drawWifiSignalBars(445, 4);
 
   // ZEGAR - rysowany osobno przez updateWeatherForecastClock()
@@ -8696,8 +8828,8 @@ void setupMatrix() {
 }
 
 void drawMatrixBackground(int bodyTop, int bodyBottom) {
-  const int charStep = 8; // wysokość znaku przy setTextSize(1)
-  const int charW = 6;    // szerokość znaku przy setTextSize(1)
+  const int charStep = 8; // wysokoĹ›Ä‡ znaku przy setTextSize(1)
+  const int charW = 6;    // szerokoĹ›Ä‡ znaku przy setTextSize(1)
   bool anyIntroActive = false;
   for (int i = 0; i < numDrops; i++) {
     int drawX = drops[i].x;
@@ -8743,14 +8875,14 @@ void drawMatrixBackground(int bodyTop, int bodyBottom) {
     for (int j = 0; j < drops[i].len; j++) {
       int charY = drawY + (j * charStep);
       if (charY >= bodyTop && charY < bodyBottom) {
-        // Blokuj znak tła, jeśli jego prostokąt przecina obszar maski zegara.
+        // Blokuj znak tĹ‚a, jeĹ›li jego prostokÄ…t przecina obszar maski zegara.
         if (drawX < (clockMaskX + clockMaskW) && (drawX + charW) > clockMaskX &&
             charY < (clockMaskY + clockMaskH) && (charY + charStep) > clockMaskY) {
           continue;
         }
         int denom = (drops[i].len > 1) ? (drops[i].len - 1) : 1;
         uint8_t t = (uint8_t)((255 * j) / denom); // 0 (ciemno) -> 255 (jasno)
-        // Najniższa litera (głowa) ma być wyraźnie jaśniejsza od drugiej.
+        // NajniĹĽsza litera (gĹ‚owa) ma byÄ‡ wyraĹşnie jaĹ›niejsza od drugiej.
         if (j == drops[i].len - 1) {
           t = 255;
         } else if (drops[i].len > 1 && j == drops[i].len - 2) {
@@ -8814,7 +8946,7 @@ void drawMatrixStatic() {
  // tft.setCursor(10, 8);
   //tft.print("ZEGAR");
 
-  // StrzaÄąâ€ški nawigacyjne na dole ekranu
+  // StrzaĂ„Ä…Ă˘â‚¬Ĺˇki nawigacyjne na dole ekranu
   //tft.fillTriangle(10, 230, 20, 222, 20, 238, TFT_RADIO_ORANGE);
   //tft.fillTriangle(310, 230, 300, 222, 300, 238, TFT_RADIO_ORANGE);
   //tft.setTextColor(0x52AA); // Ciemny szary
@@ -8827,33 +8959,33 @@ void drawMatrixFrame() {
   unsigned long now = millis();
   static unsigned long lastMatrixUpdateMs = 0;
   
-  // Aktualizuj matrix co 50ms dla płynnego efektu
+  // Aktualizuj matrix co 50ms dla pĹ‚ynnego efektu
   if (now - lastMatrixUpdateMs >= 50) {
     lastMatrixUpdateMs = now;
     
-    // Rysuj tło matrix na całym ekranie
+    // Rysuj tĹ‚o matrix na caĹ‚ym ekranie
     drawMatrixBackground(0, SCREEN10_HEIGHT);
   }
   
-  // Zegar w stylu Matrix - większy i na środku
+  // Zegar w stylu Matrix - wiÄ™kszy i na Ĺ›rodku
   String timeLocal = getTimezoneTimeString("%H:%M:%S", 9);
-  const int MATRIX_TEXT_SIZE = 4; // Większy rozmiar
+  const int MATRIX_TEXT_SIZE = 4; // WiÄ™kszy rozmiar
   const int timeCharW = 8 * MATRIX_TEXT_SIZE;
   const int timeCharH = 8 * MATRIX_TEXT_SIZE;
   const int timeWidth = 8 * timeCharW;
   const int timeHeight = timeCharH;
   const int timeX = (SCREEN10_WIDTH - timeWidth) / 2;
-  const int timeY = (SCREEN10_HEIGHT - timeHeight) / 2; // Wyśrodkowany
+  const int timeY = (SCREEN10_HEIGHT - timeHeight) / 2; // WyĹ›rodkowany
   
-  // Rysuj zegar tylko gdy się zmienił
+  // Rysuj zegar tylko gdy siÄ™ zmieniĹ‚
   if (timeLocal != lastClockText) {
-    // Wyczyść obszar zegara przed narysowaniem nowego (usuń poprzednie sekundy)
+    // WyczyĹ›Ä‡ obszar zegara przed narysowaniem nowego (usuĹ„ poprzednie sekundy)
     tft.fillRect(timeX - 5, timeY - 5, timeWidth + 10, timeHeight + 10, TFT_BLACK);
     
-    // Efekt świecący - rysuj z cieniem
+    // Efekt Ĺ›wiecÄ…cy - rysuj z cieniem
     tft.setTextSize(MATRIX_TEXT_SIZE);
     
-    // Cień/aura wokół tekstu (poświata)
+    // CieĹ„/aura wokĂłĹ‚ tekstu (poĹ›wiata)
     for (int offset = 3; offset >= 1; offset--) {
       uint16_t glowColor = (offset == 1) ? MATRIX_BRIGHTGREEN : 
                           (offset == 2) ? 0x03E0 : 0x01E0;
@@ -8868,7 +9000,7 @@ void drawMatrixFrame() {
       tft.print(timeLocal);
     }
     
-    // Główny tekst - jasnozielony
+    // GĹ‚Ăłwny tekst - jasnozielony
     tft.setTextColor(MATRIX_BRIGHTGREEN);
     tft.setCursor(timeX, timeY);
     tft.print(timeLocal);
@@ -8885,13 +9017,13 @@ void drawMatrixFrame() {
       int dateX = (SCREEN10_WIDTH - dateWidth) / 2;
       int dateY = timeY + timeHeight + 20;
       
-      // Cień daty
+      // CieĹ„ daty
       tft.setTextSize(dateTextSize);
       tft.setTextColor(0x03E0);
       tft.setCursor(dateX + 1, dateY + 1);
       tft.print(dateStr);
       
-      // Główna data
+      // GĹ‚Ăłwna data
       tft.setTextColor(MATRIX_BRIGHTGREEN);
       tft.setCursor(dateX, dateY);
       tft.print(dateStr);
@@ -8901,7 +9033,7 @@ void drawMatrixFrame() {
   }
 }
 
-// Funkcja rysująca elegancki analogowy zegar (wygaszacz ekranu)
+// Funkcja rysujÄ…ca elegancki analogowy zegar (wygaszacz ekranu)
 void drawAnalogClock() {
   unsigned long now = millis();
   
@@ -8920,36 +9052,36 @@ void drawAnalogClock() {
     int month = timeinfo.tm_mon + 1;
     int year = timeinfo.tm_year + 1900;
     
-    // Środek zegara
+    // Ĺšrodek zegara
     const int cx = 240;
-    const int cy = 145;  // Nieco wyżej aby zrobić miejsce na datę
-    const int r = 130;   // Promień tarczy
+    const int cy = 145;  // Nieco wyĹĽej aby zrobiÄ‡ miejsce na datÄ™
+    const int r = 130;   // PromieĹ„ tarczy
     
-    // Gradientowe tło - elegancki niebieski
+    // Gradientowe tĹ‚o - elegancki niebieski
     for (int y = 0; y < 320; y++) {
-      uint8_t intensity = 15 + (y * 25) / 320;  // Gradient od góry do dołu
+      uint8_t intensity = 15 + (y * 25) / 320;  // Gradient od gĂłry do doĹ‚u
       uint16_t bgColor = ((intensity & 0x1F) << 11) | ((intensity & 0x3F) << 5) | (intensity & 0x1F);
       tft.drawFastHLine(0, y, 480, bgColor);
     }
     
-    // Zewnętrzna obramowanie tarczy - metaliczne złoto/srebro
+    // ZewnÄ™trzna obramowanie tarczy - metaliczne zĹ‚oto/srebro
     for (int i = 8; i >= 0; i--) {
       uint16_t ringColor;
-      if (i == 0) ringColor = 0xFFE0;      // Złoty zewnętrzny
+      if (i == 0) ringColor = 0xFFE0;      // ZĹ‚oty zewnÄ™trzny
       else if (i < 3) ringColor = 0xC618;  // Srebrny
       else ringColor = 0x4A49;             // Ciemny metal
       tft.drawCircle(cx, cy, r + i, ringColor);
     }
     
-    // Główne tło tarczy - głęboki niebieski
+    // GĹ‚Ăłwne tĹ‚o tarczy - gĹ‚Ä™boki niebieski
     tft.fillCircle(cx, cy, r, 0x0015);
     
-    // Wewnętrzny pierścień dekoracyjny
+    // WewnÄ™trzny pierĹ›cieĹ„ dekoracyjny
     for (int i = 3; i >= 0; i--) {
-      tft.drawCircle(cx, cy, r - 10 - i, 0xC618);  // Srebrny pierścień
+      tft.drawCircle(cx, cy, r - 10 - i, 0xC618);  // Srebrny pierĹ›cieĹ„
     }
     
-    // Drugie wewnętrzne tło
+    // Drugie wewnÄ™trzne tĹ‚o
     tft.fillCircle(cx, cy, r - 14, 0x000C);
     
     // Cyfry rzymskie na tarczy
@@ -8978,7 +9110,7 @@ void drawAnalogClock() {
       tft.drawLine(x1, y1, x2, y2, color);
     }
     
-    // Oblicz kąty wskazówek
+    // Oblicz kÄ…ty wskazĂłwek
     float hourAngle = (timeinfo.tm_hour % 12) * 30 + timeinfo.tm_min * 0.5 - 90;
     float minAngle = timeinfo.tm_min * 6 - 90;
     float secAngle = timeinfo.tm_sec * 6 - 90;
@@ -8987,7 +9119,7 @@ void drawAnalogClock() {
     minAngle *= PI / 180;
     secAngle *= PI / 180;
     
-    // Wskazówka godzinowa
+    // WskazĂłwka godzinowa
     int hx = cx + (r * 0.5) * cos(hourAngle);
     int hy = cy + (r * 0.5) * sin(hourAngle);
     tft.drawLine(cx, cy, hx, hy, TFT_WHITE);
@@ -9003,23 +9135,23 @@ void drawAnalogClock() {
     tft.drawLine(cx, cy+1, mX, mY+1, 0xC618);
     tft.drawLine(cx+2, cy+2, mX+2, mY+2, 0x0005);
     
-    // Wskazówka sekundowa (elegancka, czerwona z kontrastem)
+    // WskazĂłwka sekundowa (elegancka, czerwona z kontrastem)
     int sLen = r * 0.88;
     int sX = cx + sLen * cos(secAngle);
     int sY = cy + sLen * sin(secAngle);
     tft.drawLine(cx, cy, sX, sY, TFT_RED);
     tft.drawLine(cx-1, cy, sX-1, sY, 0xF800);
     tft.drawLine(cx+1, cy, sX+1, sY, 0xF800);
-    // Koniec wskazówki (mała kropka)
+    // Koniec wskazĂłwki (maĹ‚a kropka)
     tft.fillCircle(sX, sY, 4, TFT_RED);
     
-    // Środek zegara - elegancki medalion
-    tft.fillCircle(cx, cy, 12, 0xC618);   // Srebrna obwódka
-    tft.fillCircle(cx, cy, 10, 0xFFE0);   // Złote wypełnienie
+    // Ĺšrodek zegara - elegancki medalion
+    tft.fillCircle(cx, cy, 12, 0xC618);   // Srebrna obwĂłdka
+    tft.fillCircle(cx, cy, 10, 0xFFE0);   // ZĹ‚ote wypeĹ‚nienie
     tft.fillCircle(cx, cy, 6, 0x0015);    // Niebieskie centrum
     tft.fillCircle(cx, cy, 3, TFT_RED);   // Czerwona kropka
     
-    // Napis marki na górze tarczy
+    // Napis marki na gĂłrze tarczy
     tft.setTextSize(1);
     tft.setTextColor(0xC618);
     tft.setCursor(cx - 25, cy - r + 35);
@@ -9030,11 +9162,11 @@ void drawAnalogClock() {
     snprintf(dateStr, sizeof(dateStr), "%02d.%02d.%d", timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);
     tft.setTextSize(2);
     int dateW = tft.textWidth(dateStr);
-    // Cień daty
+    // CieĹ„ daty
     tft.setTextColor(0x0005);
     tft.setCursor(cx - dateW/2 + 2, cy + r + 25 + 2);
     tft.print(dateStr);
-    // Główna data - złota
+    // GĹ‚Ăłwna data - zĹ‚ota
     tft.setTextColor(0xFFE0);
     tft.setCursor(cx - dateW/2, cy + r + 25);
     tft.print(dateStr);
@@ -9047,7 +9179,7 @@ void drawAnalogClock() {
   }
 }
 
-// Funkcja rysująca cyfrowy zegar odbijający się (stary bouncing clock)
+// Funkcja rysujÄ…ca cyfrowy zegar odbijajÄ…cy siÄ™ (stary bouncing clock)
 void drawDigitalClock() {
   unsigned long now = millis();
   static String lastTimeStr = "";
@@ -9060,38 +9192,38 @@ void drawDigitalClock() {
     // Pobierz aktualny czas
     String timeStr = getTimezoneTimeString("%H:%M:%S", 9);
     
-    // Rysuj tylko gdy się zmienił lub pierwszy raz
+    // Rysuj tylko gdy siÄ™ zmieniĹ‚ lub pierwszy raz
     if (firstDraw || timeStr != lastTimeStr) {
       firstDraw = false;
       lastTimeStr = timeStr;
       
-      // Wyczyść ekran tylko raz
+      // WyczyĹ›Ä‡ ekran tylko raz
       if (firstDraw) {
         tft.fillScreen(TFT_BLACK);
       }
       
-      // Oblicz pozycję - wyśrodkowany
+      // Oblicz pozycjÄ™ - wyĹ›rodkowany
       int textW = timeStr.length() * BOUNCE_CLOCK_CHAR_W;
       int centerX = SCREEN10_WIDTH / 2;
       int centerY = SCREEN10_HEIGHT / 2;
       int x = centerX - textW / 2;
       int y = centerY - BOUNCE_CLOCK_CHAR_H / 2;
       
-      // Wyczyść obszar zegara (prostokąt w centrum)
+      // WyczyĹ›Ä‡ obszar zegara (prostokÄ…t w centrum)
       tft.fillRect(x - 20, y - 20, textW + 40, BOUNCE_CLOCK_CHAR_H + 40, TFT_BLACK);
       
-      // Efekt neonowy - cień
+      // Efekt neonowy - cieĹ„
       tft.setTextSize(BOUNCE_CLOCK_TEXT_SIZE);
-      tft.setTextColor(0x0410); // Ciemny niebieski cień
+      tft.setTextColor(0x0410); // Ciemny niebieski cieĹ„
       tft.setCursor(x + 4, y + 4);
       tft.print(timeStr);
       
-      // Główny tekst - cyfrowy zielony
+      // GĹ‚Ăłwny tekst - cyfrowy zielony
       tft.setTextColor(0x07E0); // Jasny zielony
       tft.setCursor(x, y);
       tft.print(timeStr);
       
-      // Dodaj ramkę wokół zegara
+      // Dodaj ramkÄ™ wokĂłĹ‚ zegara
       tft.drawRect(x - 10, y - 10, textW + 20, BOUNCE_CLOCK_CHAR_H + 20, 0x07E0);
       tft.drawRect(x - 8, y - 8, textW + 16, BOUNCE_CLOCK_CHAR_H + 16, 0x0410);
       
@@ -9110,7 +9242,7 @@ void drawDigitalClock() {
   }
 }
 
-// Główna funkcja wygaszacza - wybiera odpowiedni typ
+// GĹ‚Ăłwna funkcja wygaszacza - wybiera odpowiedni typ
 void drawScreenSaver() {
   switch (screenSaverType) {
     case SAVER_ANALOG_CLOCK:
@@ -9126,7 +9258,7 @@ void drawScreenSaver() {
   }
 }
 
-// Ekran 10: Zegar z animowanym tłem
+// Ekran 10: Zegar z animowanym tĹ‚em
 void drawMatrixClock() {
   if (!matrixInitialized) {
     setupMatrix();
@@ -9778,27 +9910,27 @@ void drawScreenEmpty(int screenNum) {
   String screenText = String(tr(TR_PAGE)) + " " + String(screenNum);
   int textWidth = screenText.length() * 18;
   int xPos = (480 - textWidth) / 2;
-  int yPos = 110; // WyÄąâ€şrodkowane w pionie
+  int yPos = 110; // WyĂ„Ä…Ă˘â‚¬Ĺźrodkowane w pionie
   
   tft.setCursor(xPos, yPos);
   tft.print(screenText);
 
-  // Strzałki nawigacyjne - duże, blisko krawędzi (takie same na wszystkich ekranach)
+  // StrzaĹ‚ki nawigacyjne - duĹĽe, blisko krawÄ™dzi (takie same na wszystkich ekranach)
   int arrowY = 290;
   int arrowSize = 12;
   tft.fillTriangle(15, arrowY, 15 + arrowSize, arrowY - arrowSize, 15 + arrowSize, arrowY + arrowSize, TFT_RADIO_ORANGE);
   tft.fillTriangle(465, arrowY, 465 - arrowSize, arrowY - arrowSize, 465 - arrowSize, arrowY + arrowSize, TFT_RADIO_ORANGE);
   
-  // Opcjonalny opis między strzałkami (małą czcionką)
+  // Opcjonalny opis miÄ™dzy strzaĹ‚kami (maĹ‚Ä… czcionkÄ…)
   tft.setTextColor(0x52AA); // Ciemny szary
   tft.setTextSize(1);
   tft.setCursor(195, 286);
   tft.print("SWITCH SCREEN");
 }
 
-// Rysuj strzałki nawigacyjne < >
+// Rysuj strzaĹ‚ki nawigacyjne < >
 void drawNavigationArrows() {
-  // Intentionally empty: nawigacja przez dotyk bez elementÄ‚łw UI
+  // Intentionally empty: nawigacja przez dotyk bez elementĂ„â€šĹ‚w UI
 }
 
 static volatile bool uiPendingScreen1Redraw = false;
@@ -9833,7 +9965,7 @@ static void requestUiScreenRedraw(uint8_t pendingScreenId) {
   portEXIT_CRITICAL(&uiPendingRedrawMux);
 }
 
-// Aktualizuj ekran 2 (DX Cluster) - wywoływane gdy przyjdą nowe spoty
+// Aktualizuj ekran 2 (DX Cluster) - wywoĹ‚ywane gdy przyjdÄ… nowe spoty
 void updateScreen2() {
   if (currentScreen == SCREEN_DX_CLUSTER && !inMenu && !aprsAlertScreenActive) {
     requestUiScreenRedraw(SCREEN_DX_CLUSTER);
@@ -9852,7 +9984,7 @@ void updateScreen6() {
   }
 }
 
-// Aktualizuj ekran 1 (Info) - wywoływane gdy zmieni się IP
+// Aktualizuj ekran 1 (Info) - wywoĹ‚ywane gdy zmieni siÄ™ IP
 void updateScreen1() {
   if (bootSequenceActive) {
     return;
@@ -9921,6 +10053,21 @@ static bool drawBmpFromFS(const String &filename, int16_t x, int16_t y) {
   w = readBmp32(bmpFS);
   h = readBmp32(bmpFS);
 
+  // Walidacja wymiarĂłw PRZED alokacjÄ… bufora wiersza - w/h pochodzÄ… wprost
+  // z nagĹ‚Ăłwka pliku, bez ĹĽadnej weryfikacji. Bufor poniĹĽej byĹ‚ tablicÄ… o
+  // zmiennym rozmiarze (VLA) na STOSIE (uint8_t lineBuffer[w*3+padding]) -
+  // uszkodzony albo nieoczekiwanie duĹĽy plik BMP (np. zĹ‚a/nieistniejÄ…ca
+  // ikona pogodowa trafiajÄ…ca w "unknown.bmp" o zĹ‚ych wymiarach) mĂłgĹ‚
+  // przepeĹ‚niÄ‡ stos i zawiesiÄ‡ urzÄ…dzenie (crash "StoreProhibited" pod
+  // adresem 0x0 - dokĹ‚adnie to, co byĹ‚o widoczne w logu). Wszystkie
+  // obrazy uĹĽywane w tym projekcie (splash 480x320, ikony 50x50) mieszczÄ…
+  // siÄ™ duĹĽo poniĹĽej szerokoĹ›ci ekranu, wiÄ™c to bezpieczny, hojny limit.
+  if (w == 0 || h == 0 || w > tft.width() || h > 1000) {
+    Serial.printf("[BMP] Odrzucono plik o niewiarygodnych wymiarach: %ux%u (%s)\n", w, h, filename.c_str());
+    bmpFS.close();
+    return false;
+  }
+
   if (readBmp16(bmpFS) != 1 || readBmp16(bmpFS) != 24 || readBmp32(bmpFS) != 0) {
     bmpFS.close();
     return false;
@@ -9985,29 +10132,29 @@ static bool drawBmp16FromFS(const String &filename, int16_t x, int16_t y) {
   uint16_t bpp = readBmp16(bmpFS);
   uint32_t compression = readBmp32(bmpFS);
 
-  // Sprawdź czy to 16-bit z maskami bitowymi (BI_BITFIELDS = 3)
+  // SprawdĹş czy to 16-bit z maskami bitowymi (BI_BITFIELDS = 3)
   if (planes != 1 || bpp != 16 || (compression != 0 && compression != 3)) {
     bmpFS.close();
     return false;
   }
 
-  // Jeśli compression == 3, pomiń maski bitowe (12 bajtów)
+  // JeĹ›li compression == 3, pomiĹ„ maski bitowe (12 bajtĂłw)
   if (compression == 3) {
     readBmp32(bmpFS);
     readBmp32(bmpFS);
     readBmp32(bmpFS);
   }
 
-  // BMP zapisuje od dołu do góry, więc zaczynamy od dolnego wiersza
+  // BMP zapisuje od doĹ‚u do gĂłry, wiÄ™c zaczynamy od dolnego wiersza
   y += h - 1;
   bool oldSwap = tft.getSwapBytes();
   tft.setSwapBytes(true);
   bmpFS.seek(seekOffset);
 
-  uint16_t rowSize = ((16 * w + 31) / 32) * 4;  // Wyrównane do 4 bajtów
+  uint16_t rowSize = ((16 * w + 31) / 32) * 4;  // WyrĂłwnane do 4 bajtĂłw
   uint16_t padding = rowSize - (w * 2);
   
-  // Użyj alokacji na stercie zamiast stosu dla lepszego wyrównania
+  // UĹĽyj alokacji na stercie zamiast stosu dla lepszego wyrĂłwnania
   uint16_t lineBufferSize = rowSize;
   uint8_t* lineBuffer = (uint8_t*)malloc(lineBufferSize);
   if (!lineBuffer) {
@@ -10018,7 +10165,7 @@ static bool drawBmp16FromFS(const String &filename, int16_t x, int16_t y) {
 
   for (uint16_t row = 0; row < h; row++) {
     bmpFS.read(lineBuffer, rowSize);
-    // Dane są już w RGB565, przekazujemy bezpośrednio
+    // Dane sÄ… juĹĽ w RGB565, przekazujemy bezpoĹ›rednio
     tft.pushImage(x, y--, w, 1, (uint16_t *)lineBuffer);
   }
 
@@ -10038,7 +10185,7 @@ String getAPRSSymbolRaw(const APRSStation &station) {
   return "-";
 }
 
-// ZwrÄ‚łĂ„â€ˇ krÄ‚łtki opis symbolu (<=10 znakÄ‚łw) zgodny z tabelĂ„â€¦ APRS
+// ZwrĂ„â€šĹ‚Ä‚â€žĂ˘â‚¬Ë‡ krĂ„â€šĹ‚tki opis symbolu (<=10 znakĂ„â€šĹ‚w) zgodny z tabelÄ‚â€žĂ˘â‚¬Â¦ APRS
 String getAPRSSymbolShort(const APRSStation &station) {
   String raw = getAPRSSymbolRaw(station);
   if (raw == "/-") return "HOUSE";
@@ -10288,15 +10435,15 @@ static void drawAprsAlertHouseIcon(int centerX, int topY) {
   const int bodyX = centerX - (bodyW / 2);
   const int bodyY = topY + 10;
 
-  // Ściany domu (żółte)
+  // Ĺšciany domu (ĹĽĂłĹ‚te)
   tft.fillRect(bodyX, bodyY, bodyW, bodyH, TFT_YELLOW);
 
-  // Dach dwuspadowy (brązowy)
+  // Dach dwuspadowy (brÄ…zowy)
   const uint16_t roofColor = TFT_GREEN;
   int roofTopY = topY;
   tft.fillTriangle(centerX, roofTopY, bodyX - 3, bodyY + 1, bodyX + bodyW + 3, bodyY + 1, roofColor);
 
-  // Drzwi i okna dla czytelności
+  // Drzwi i okna dla czytelnoĹ›ci
   tft.fillRect(centerX - 4, bodyY + 12, 8, 12, TFT_DARKGREY);
   tft.fillRect(bodyX + 4, bodyY + 6, 6, 6, TFT_LIGHTGREY);
   tft.fillRect(bodyX + bodyW - 10, bodyY + 6, 6, 6, TFT_LIGHTGREY);
@@ -10308,16 +10455,16 @@ static void drawAprsAlertHumanIcon(int centerX, int topY) {
   int headX = centerX;
   int headY = topY + 5;
 
-  // Głowa
+  // GĹ‚owa
   tft.fillCircle(headX, headY, 4, headColor);
 
-  // Tułów (lekko pochylony)
+  // TuĹ‚Ăłw (lekko pochylony)
   tft.drawLine(headX, headY + 4, headX + 2, headY + 18, bodyColor);
   tft.drawLine(headX + 1, headY + 4, headX + 3, headY + 18, bodyColor);
   tft.drawLine(headX + 2, headY + 4, headX + 4, headY + 18, bodyColor);
   tft.drawLine(headX + 3, headY + 4, headX + 5, headY + 18, bodyColor);
 
-  // Ręce (ruch spaceru)
+  // RÄ™ce (ruch spaceru)
   tft.drawLine(headX + 1, headY + 8, headX - 6, headY + 12, bodyColor);
   tft.drawLine(headX + 3, headY + 8, headX + 10, headY + 11, bodyColor);
   tft.drawLine(headX + 2, headY + 9, headX - 5, headY + 13, bodyColor);
@@ -10325,7 +10472,7 @@ static void drawAprsAlertHumanIcon(int centerX, int topY) {
   tft.drawLine(headX + 3, headY + 10, headX - 4, headY + 14, bodyColor);
   tft.drawLine(headX + 5, headY + 10, headX + 12, headY + 13, bodyColor);
 
-  // Nogi (jedna do przodu, druga do tyłu)
+  // Nogi (jedna do przodu, druga do tyĹ‚u)
   tft.drawLine(headX + 3, headY + 18, headX - 4, headY + 28, bodyColor);
   tft.drawLine(headX + 3, headY + 18, headX + 12, headY + 27, bodyColor);
   tft.drawLine(headX + 4, headY + 18, headX - 3, headY + 28, bodyColor);
@@ -10518,7 +10665,7 @@ void ALERT_Screen(const APRSStation &station) {
 
   tft.fillScreen(TFT_BLACK);
   
-  // Górny pasek z nagłówkiem
+  // GĂłrny pasek z nagĹ‚Ăłwkiem
   tft.fillRect(0, 0, 480, 45, TFT_RADIO_ORANGE);
   tft.drawFastHLine(0, 44, 480, 0x8410);
 
@@ -10531,7 +10678,7 @@ void ALERT_Screen(const APRSStation &station) {
   
   drawAprsAlertCloseButton();
 
-  // Główna ramka wokół zawartości
+  // GĹ‚Ăłwna ramka wokĂłĹ‚ zawartoĹ›ci
   const int frameX = 10;
   const int frameY = 55;
   const int frameW = 460;
@@ -10545,7 +10692,7 @@ void ALERT_Screen(const APRSStation &station) {
     callsign = "-";
   }
 
-  // ZNAK WYWOŁAWCZY - duży, wyśrodkowany w ramce
+  // ZNAK WYWOĹAWCZY - duĹĽy, wyĹ›rodkowany w ramce
   tft.setTextColor(TFT_WHITE);
   int callTextSize = (callsign.length() <= 6) ? 6 : 5;
   tft.setTextSize(callTextSize);
@@ -10553,7 +10700,7 @@ void ALERT_Screen(const APRSStation &station) {
   int callX = frameX + (frameW - (callsign.length() * charWidth)) / 2;
   int callY = frameY + 20;
   
-  // Ramka wokół znaku
+  // Ramka wokĂłĹ‚ znaku
   int callBoxPadding = 10;
   int callBoxW = callsign.length() * charWidth + 2 * callBoxPadding;
   int callBoxH = charWidth + callBoxPadding;
@@ -10564,7 +10711,7 @@ void ALERT_Screen(const APRSStation &station) {
   tft.setCursor(callX, callY);
   tft.print(callsign);
 
-  // Częstotliwość pod znakiem
+  // CzÄ™stotliwoĹ›Ä‡ pod znakiem
   String freqText = "-";
   if (station.freqMHz > 0.0f) {
     freqText = String(station.freqMHz, 3) + " MHz";
@@ -10575,13 +10722,13 @@ void ALERT_Screen(const APRSStation &station) {
   tft.setCursor(freqX, callY + callBoxH + 10);
   tft.print(freqText);
 
-  // KOMPAS i ODLEGŁOŚĆ - na dole ramki, obok siebie
+  // KOMPAS i ODLEGĹOĹšÄ† - na dole ramki, obok siebie
   String distanceText = "- km";
   if (station.hasLatLon && station.distance > 0.0f) {
     distanceText = String(station.distance, 1) + " km";
   }
   
-  // Kompas po lewej - wyżej
+  // Kompas po lewej - wyĹĽej
   const int compassX = frameX + 80;
   const int compassY = frameY + frameH - 130;
   const int compassR = 40;
@@ -10594,7 +10741,7 @@ void ALERT_Screen(const APRSStation &station) {
   }
   drawAprsAlertCompass(compassX, compassY, compassR, hasBearing, bearingDeg);
 
-  // Odległość pod kompasem
+  // OdlegĹ‚oĹ›Ä‡ pod kompasem
   tft.setTextColor(TFT_RADIO_ORANGE);
   tft.setTextSize(2);
   int distX = compassX - ((int)distanceText.length() * 12) / 2;
@@ -10622,11 +10769,11 @@ void ALERT_Screen(const APRSStation &station) {
   } else if (iconShort == "HUMAN") {
     drawAprsAlertHumanIcon(iconCenterX, iconCenterY);
   } else {
-    // Domyślnie dom
+    // DomyĹ›lnie dom
     drawAprsAlertHouseIcon(iconCenterX, iconCenterY);
   }
 
-  // Typ stacji pod ikoną - dostosowany do nowej pozycji
+  // Typ stacji pod ikonÄ… - dostosowany do nowej pozycji
   tft.setTextColor(TFT_LIGHTGREY);
   tft.setTextSize(2);
   String iconDesc = getAprsAlertSymbolDescription(station);
@@ -10654,7 +10801,7 @@ void updateAlertScreenTimeout() {
   dismissAprsAlertScreen();
 }
 
-// WyciĂ„â€¦gnij czĂ„â„˘stotliwoÄąâ€şĂ„â€ˇ z komentarza APRS (MHz)
+// WyciÄ‚â€žĂ˘â‚¬Â¦gnij czÄ‚â€žĂ˘â€žËstotliwoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ z komentarza APRS (MHz)
 bool extractAPRSFrequencyMHz(const String &text, float &outMHz) {
   const int len = text.length();
   for (int i = 0; i < len; i++) {
@@ -10693,7 +10840,7 @@ bool extractAPRSFrequencyMHz(const String &text, float &outMHz) {
         }
       }
 
-      // Bez jednostki: akceptuj tylko liczby dziesiĂ„â„˘tne w paÄąâ€şmie VHF/UHF
+      // Bez jednostki: akceptuj tylko liczby dziesiÄ‚â€žĂ˘â€žËtne w paĂ„Ä…Ă˘â‚¬Ĺźmie VHF/UHF
       if (hasDot && value >= 30.0f && value <= 1000.0f) {
         outMHz = value;
         return true;
@@ -10703,7 +10850,7 @@ bool extractAPRSFrequencyMHz(const String &text, float &outMHz) {
   return false;
 }
 
-// Konwersja Maidenhead Locator do wspÄ‚łÄąâ€šrzĂ„â„˘dnych geograficznych
+// Konwersja Maidenhead Locator do wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych geograficznych
 void locatorToLatLon(String locator, double &lat, double &lon) {
   if (locator.length() < 4) {
     lat = 0;
@@ -10717,7 +10864,7 @@ void locatorToLatLon(String locator, double &lat, double &lon) {
   lon = (c1 - 'A') * 20 - 180;
   lat = (c2 - 'A') * 10 - 90;
   
-  // NastĂ„â„˘pne 2 znaki - kwadrat (square)
+  // NastÄ‚â€žĂ˘â€žËpne 2 znaki - kwadrat (square)
   if (locator.length() >= 4) {
     int n1 = locator.charAt(2) - '0';
     int n2 = locator.charAt(3) - '0';
@@ -10725,7 +10872,7 @@ void locatorToLatLon(String locator, double &lat, double &lon) {
     lat += n2 * 1;
   }
   
-  // ÄąĹˇrodek kwadratu
+  // Ă„Ä…ÄąË‡rodek kwadratu
   lon += 1;
   lat += 0.5;
 }
@@ -10741,7 +10888,7 @@ void updateUserLatLonFromLocator() {
   }
 }
 
-// SprawdÄąĹź czy tekst wspÄ‚łÄąâ€šrzĂ„â„˘dnych ma tylko cyfry i kropkĂ„â„˘ (nie obsÄąâ€šugujemy formatÄ‚łw skompresowanych)
+// SprawdĂ„Ä…ÄąĹş czy tekst wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych ma tylko cyfry i kropkÄ‚â€žĂ˘â€žË (nie obsĂ„Ä…Ă˘â‚¬Ĺˇugujemy formatĂ„â€šĹ‚w skompresowanych)
 static bool isAprsNumeric(const String &raw_aprs) {
     if (raw_aprs.length() == 0) {
         return false;
@@ -10761,12 +10908,12 @@ static bool isAprsNumeric(const String &raw_aprs) {
     return true;
 }
 
-// Konwersja surowej pozycji APRS na stopnie dziesiĂ„â„˘tne
-// Konwersja formatu APRS (DDMM.mmN lub DDDMM.mmE) na stopnie dziesiĂ„â„˘tne
-// Format APRS: DDMM.mm dla szerokoÄąâ€şci, DDDMM.mm dla dÄąâ€šugoÄąâ€şci
+// Konwersja surowej pozycji APRS na stopnie dziesiÄ‚â€žĂ˘â€žËtne
+// Konwersja formatu APRS (DDMM.mmN lub DDDMM.mmE) na stopnie dziesiÄ‚â€žĂ˘â€žËtne
+// Format APRS: DDMM.mm dla szerokoĂ„Ä…Ă˘â‚¬Ĺźci, DDDMM.mm dla dĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬Ĺźci
 float convertToDecimal(String raw_aprs, char direction) {
     if (raw_aprs.length() < 4) {
-        LOGV_PRINTF("[APRS] convertToDecimal: za krÄ‚łtki string: %s\n", raw_aprs.c_str());
+        LOGV_PRINTF("[APRS] convertToDecimal: za krĂ„â€šĹ‚tki string: %s\n", raw_aprs.c_str());
         return NAN;
     }
     if (!isAprsNumeric(raw_aprs)) {
@@ -10778,8 +10925,8 @@ float convertToDecimal(String raw_aprs, char direction) {
     double minutes = 0.0;
 
     if (direction == 'N' || direction == 'S') {
-        // SzerokoÄąâ€şĂ„â€ˇ (Latitude): pierwsze 2 znaki to stopnie (DDMM.mm)
-        // PrzykÄąâ€šad: "5202.40" -> degrees=52, minutes=02.40
+        // SzerokoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ (Latitude): pierwsze 2 znaki to stopnie (DDMM.mm)
+        // PrzykĂ„Ä…Ă˘â‚¬Ĺˇad: "5202.40" -> degrees=52, minutes=02.40
         if (raw_aprs.length() >= 2) {
             String degStr = raw_aprs.substring(0, 2);
             degrees = degStr.toDouble();
@@ -10789,8 +10936,8 @@ float convertToDecimal(String raw_aprs, char direction) {
             minutes = minStr.toDouble();
         }
     } else if (direction == 'E' || direction == 'W') {
-        // DÄąâ€šugoÄąâ€şĂ„â€ˇ (Longitude): pierwsze 3 znaki to stopnie (DDDMM.mm)
-        // PrzykÄąâ€šad: "01655.12" -> degrees=016, minutes=55.12
+        // DĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ (Longitude): pierwsze 3 znaki to stopnie (DDDMM.mm)
+        // PrzykĂ„Ä…Ă˘â‚¬Ĺˇad: "01655.12" -> degrees=016, minutes=55.12
         if (raw_aprs.length() >= 3) {
             String degStr = raw_aprs.substring(0, 3);
             degrees = degStr.toDouble();
@@ -10804,16 +10951,16 @@ float convertToDecimal(String raw_aprs, char direction) {
         return NAN;
     }
 
-    // Walidacja zakresÄ‚łw
+    // Walidacja zakresĂ„â€šĹ‚w
     if (direction == 'N' || direction == 'S') {
         if (degrees < 0 || degrees > 90 || minutes < 0 || minutes >= 60) {
-            LOGV_PRINTF("[APRS] convertToDecimal: nieprawidÄąâ€šowa szerokoÄąâ€şĂ„â€ˇ: %s%c (deg=%.1f, min=%.2f)\n", 
+            LOGV_PRINTF("[APRS] convertToDecimal: nieprawidĂ„Ä…Ă˘â‚¬Ĺˇowa szerokoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡: %s%c (deg=%.1f, min=%.2f)\n", 
                        raw_aprs.c_str(), direction, degrees, minutes);
             return NAN;
         }
     } else {
         if (degrees < 0 || degrees > 180 || minutes < 0 || minutes >= 60) {
-            LOGV_PRINTF("[APRS] convertToDecimal: nieprawidÄąâ€šowa dÄąâ€šugoÄąâ€şĂ„â€ˇ: %s%c (deg=%.1f, min=%.2f)\n", 
+            LOGV_PRINTF("[APRS] convertToDecimal: nieprawidĂ„Ä…Ă˘â‚¬Ĺˇowa dĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡: %s%c (deg=%.1f, min=%.2f)\n", 
                        raw_aprs.c_str(), direction, degrees, minutes);
             return NAN;
         }
@@ -10821,7 +10968,7 @@ float convertToDecimal(String raw_aprs, char direction) {
 
     double decimal = degrees + (minutes / 60.0);
 
-    // JeÄąâ€şli PoÄąâ€šudnie (S) lub ZachÄ‚łd (W), wynik musi byĂ„â€ˇ ujemny
+    // JeĂ„Ä…Ă˘â‚¬Ĺźli PoĂ„Ä…Ă˘â‚¬Ĺˇudnie (S) lub ZachĂ„â€šĹ‚d (W), wynik musi byÄ‚â€žĂ˘â‚¬Ë‡ ujemny
     if (direction == 'S' || direction == 'W') {
         decimal = -decimal;
     }
@@ -11204,7 +11351,7 @@ static bool parseAprsAdvancedPosition(const String &line, APRSStation &station) 
     }
 
     if (objectOrItemName.length() > 0) {
-      // Dla raportów Object/Item użyj nazwy obiektu jako identyfikatora stacji.
+      // Dla raportĂłw Object/Item uĹĽyj nazwy obiektu jako identyfikatora stacji.
       station.callsign = objectOrItemName;
     }
 
@@ -11214,11 +11361,11 @@ static bool parseAprsAdvancedPosition(const String &line, APRSStation &station) 
     return true;
 }
 
-// Obliczanie odlegÄąâ€šoÄąâ€şci metodĂ„â€¦ Haversine (km)
-// UÄąÄ˝ywa double dla wiĂ„â„˘kszej precyzji obliczeÄąâ€ž
-// UÄąÄ˝ywa promienia Ziemi 6366.71 km (jak w ESP32APRS_Audio) dla zgodnoÄąâ€şci z aprs.fi
+// Obliczanie odlegĂ„Ä…Ă˘â‚¬ĹˇoĂ„Ä…Ă˘â‚¬Ĺźci metodÄ‚â€žĂ˘â‚¬Â¦ Haversine (km)
+// UĂ„Ä…Ă„Ëťywa double dla wiÄ‚â€žĂ˘â€žËkszej precyzji obliczeĂ„Ä…Ă˘â‚¬Ĺľ
+// UĂ„Ä…Ă„Ëťywa promienia Ziemi 6366.71 km (jak w ESP32APRS_Audio) dla zgodnoĂ„Ä…Ă˘â‚¬Ĺźci z aprs.fi
 float calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double r = 6366.71; // PromieÄąâ€ž Ziemi w km (uÄąÄ˝ywany przez ESP32APRS_Audio i aprs.fi)
+    const double r = 6366.71; // PromieĂ„Ä…Ă˘â‚¬Ĺľ Ziemi w km (uĂ„Ä…Ă„Ëťywany przez ESP32APRS_Audio i aprs.fi)
     const double dLat = (lat2 - lat1) * M_PI / 180.0;
     const double dLon = (lon2 - lon1) * M_PI / 180.0;
 
@@ -11230,7 +11377,7 @@ float calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     return (float)(r * c); // Wynik w km
 }
 
-// Oblicz azymut początkowy (0..360), gdzie 0 = Północ
+// Oblicz azymut poczÄ…tkowy (0..360), gdzie 0 = PĂłĹ‚noc
 float calculateBearing(double lat1, double lon1, double lat2, double lon2) {
     const double phi1 = lat1 * M_PI / 180.0;
     const double phi2 = lat2 * M_PI / 180.0;
@@ -11257,7 +11404,7 @@ String formatDistanceOrCountry(const DXSpot &spot, size_t maxLen) {
   return "-";
 }
 
-// OkreÄąâ€şlanie pasma na podstawie czĂ„â„˘stotliwoÄąâ€şci (kHz) wg bandplanu
+// OkreĂ„Ä…Ă˘â‚¬Ĺźlanie pasma na podstawie czÄ‚â€žĂ˘â€žËstotliwoĂ„Ä…Ă˘â‚¬Ĺźci (kHz) wg bandplanu
 String getBand(float freq) {
   // Normalize to kHz so both kHz (DX cluster) and MHz (POTA API) inputs map correctly
   float freqKHz = freq;
@@ -11277,14 +11424,14 @@ String getBand(float freq) {
   return "Other";
 }
 
-// OkreÄąâ€şlanie modulacji na podstawie komentarza
+// OkreĂ„Ä…Ă˘â‚¬Ĺźlanie modulacji na podstawie komentarza
 String getMode(String comment) {
   comment.toUpperCase();
   if (comment.indexOf("CW") >= 0) return "CW";
   if (comment.indexOf("FT4") >= 0) return "FT4";
   if (comment.indexOf("FT8") >= 0) return "FT8";
   if (comment.indexOf("SSB") >= 0 || comment.indexOf("USB") >= 0 || comment.indexOf("LSB") >= 0) return "SSB";
-  return "SSB"; // DomyÄąâ€şlnie SSB
+  return "SSB"; // DomyĂ„Ä…Ă˘â‚¬Ĺźlnie SSB
 }
 
 String extractXmlTagValue(const String &xml, const String &tag) {
@@ -11298,7 +11445,7 @@ String extractXmlTagValue(const String &xml, const String &tag) {
   return xml.substring(start, end);
 }
 
-// Funkcja do URL-encodowania stringów (używana przy QRZ)
+// Funkcja do URL-encodowania stringĂłw (uĹĽywana przy QRZ)
 static String urlEncode(const String& value) {
   String encoded = "";
   char c;
@@ -11369,7 +11516,7 @@ static String urlEncode(const String& value) {
     } else if (c == '-') {
       encoded += "%2D";
     } else if (c < '0' || (c > '9' && c < 'A') || (c > 'Z' && c < 'a') || (c > 'z' && c < 127)) {
-      // Kodowanie wszystkich innych znaków specjalnych i znaków > 127 (UTF-8)
+      // Kodowanie wszystkich innych znakĂłw specjalnych i znakĂłw > 127 (UTF-8)
       char hex[4];
       snprintf(hex, sizeof(hex), "%%%02X", (unsigned char)c);
       encoded += hex;
@@ -11400,21 +11547,23 @@ bool ensureQrzSession(String &sessionKey) {
   String url = "https://xmldata.qrz.com/xml/current/?username=" + urlEncode(qrzUsername) +
                ";password=" + urlEncode(qrzPassword);
   
-  // Debug log - pokaż URL z zamaskowanym hasłem
+  // Debug log - pokaĹĽ URL z zamaskowanym hasĹ‚em
   String debugUrl = "https://xmldata.qrz.com/xml/current/?username=" + urlEncode(qrzUsername) +
                     ";password=*** (len=" + String(qrzPassword.length()) + ")";
   Serial.println("[QRZ DEBUG] URL: " + debugUrl);
   Serial.println("[QRZ DEBUG] Username: " + qrzUsername + " (len=" + String(qrzUsername.length()) + ")");
   Serial.println("[QRZ DEBUG] Pass len: " + String(qrzPassword.length()));
   
-  // Pokaż pierwsze i ostatnie 3 znaki zakodowanego hasła (dla weryfikacji)
+  // PokaĹĽ pierwsze i ostatnie 3 znaki zakodowanego hasĹ‚a (dla weryfikacji)
   String encodedPass = urlEncode(qrzPassword);
   String passPreview = encodedPass.substring(0, 6) + "..." + encodedPass.substring(encodedPass.length()-6);
   Serial.println("[QRZ DEBUG] Encoded pass preview: " + passPreview + " (total len=" + String(encodedPass.length()) + ")");
   
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(url);
+  static WiFiClientSecure qrzSessionClient;
+  qrzSessionClient.setInsecure();
+  http.begin(qrzSessionClient, url);
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11493,9 +11642,11 @@ bool fetchCallookCallsignInfo(const String &callsign, String &outGrid, String &o
   }
 
   String url = "https://callook.info/" + call + "/json";
+  static WiFiClientSecure callookClient;
+  callookClient.setInsecure();
   HTTPClient http;
   http.setTimeout(5000);
-  http.begin(url);
+  http.begin(callookClient, url);
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11593,11 +11744,11 @@ bool fetchCallookCallsignInfo(const String &callsign, String &outGrid, String &o
 }
 
 // ========== HAMQTH.COM API (Free, global) ==========
-// Dodaj mapowanie prefiksu na przybliżony lokalizator
+// Dodaj mapowanie prefiksu na przybliĹĽony lokalizator
 String getApproximateGridFromCallsign(const String &callsign) {
   if (callsign.length() < 2) return "";
   
-  // Mapowanie prefiksów na przybliżone lokatory (centrum kraju)
+  // Mapowanie prefiksĂłw na przybliĹĽone lokatory (centrum kraju)
   String prefix = callsign.substring(0, 2);
   prefix.toUpperCase();
   
@@ -11744,7 +11895,7 @@ String getApproximateGridFromCallsign(const String &callsign) {
   if (callsign.startsWith("Y4")) return "FM07vx";    // Germany (V Rhodes)
   if (callsign.startsWith("Y5")) return "FM07vx";    // Germany (V Rhodes)
   
-  // USA / Kanada (Callook działa, ale dla pewności)
+  // USA / Kanada (Callook dziaĹ‚a, ale dla pewnoĹ›ci)
   if (callsign.startsWith("K"))  return "EM48to";    // USA (rough center)
   if (callsign.startsWith("N"))  return "EM48to";    // USA
   if (callsign.startsWith("W"))  return "EM48to";    // USA
@@ -11806,9 +11957,11 @@ bool fetchHamQthCallsignInfo(const String &callsign, String &outGrid, String &ou
 
   // HamQTH API - no login required for basic info
   String url = "https://www.hamqth.com/dxcc_json.php?callsign=" + call + "&apikey=ESP32HAMCLOCK";
+  static WiFiClientSecure hamqthClient;
+  hamqthClient.setInsecure();
   HTTPClient http;
   http.setTimeout(5000);
-  http.begin(url);
+  http.begin(hamqthClient, url);
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11854,7 +12007,7 @@ bool fetchHamQthCallsignInfo(const String &callsign, String &outGrid, String &ou
     locatorToLatLon(outGrid, outLat, outLon);
     outHasLatLon = true;
   } else {
-    // Brak grid z API - spróbuj przybliżony z prefiksu
+    // Brak grid z API - sprĂłbuj przybliĹĽony z prefiksu
     String approxGrid = getApproximateGridFromCallsign(call);
     if (approxGrid.length() >= 4) {
       outGrid = approxGrid + " (approx)";
@@ -11938,9 +12091,11 @@ bool fetchQrzCallsignInfo(const String &callsign, String &outGrid, String &outCo
 
   String url = "https://xmldata.qrz.com/xml/current/?s=" + sessionKey +
                ";callsign=" + callsign;
+  static WiFiClientSecure qrzLookupClient;
+  qrzLookupClient.setInsecure();
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(url);
+  http.begin(qrzLookupClient, url);
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -11950,7 +12105,7 @@ bool fetchQrzCallsignInfo(const String &callsign, String &outGrid, String &outCo
   String body = http.getString();
   http.end();
 
-  // Obsługa błędu sesji - spróbuj raz odświeżyć
+  // ObsĹ‚uga bĹ‚Ä™du sesji - sprĂłbuj raz odĹ›wieĹĽyÄ‡
   if (body.indexOf("Session Timeout") >= 0 || body.indexOf("Invalid session") >= 0) {
     String dummy;
     ensureQrzSession(dummy);
@@ -12011,7 +12166,7 @@ bool fetchQrzCallsignInfo(const String &callsign, String &outGrid, String &outCo
     outLat = latStr.toDouble();
     outLon = lonStr.toDouble();
   } else if (grid.length() >= 4) {
-    // JeĹ›li nie ma lat/lon z QRZ ale mamy lokator, przekonwertuj na wspĂłĹ‚rzÄ™dne
+    // JeÄąâ€şli nie ma lat/lon z QRZ ale mamy lokator, przekonwertuj na wspÄ‚Ĺ‚Äąâ€šrzĂ„â„˘dne
     double latFromGrid = 0.0, lonFromGrid = 0.0;
     locatorToLatLon(grid, latFromGrid, lonFromGrid);
     if (latFromGrid != 0.0 || lonFromGrid != 0.0) {
@@ -12240,7 +12395,7 @@ void enqueueQrzLookup(const String &callsign) {
     return;
   }
 
-  // Nie dodawaj do kolejki, jeżeli mamy już świeży wpis w cache ze wszystkimi danymi.
+  // Nie dodawaj do kolejki, jeĹĽeli mamy juĹĽ Ĺ›wieĹĽy wpis w cache ze wszystkimi danymi.
   String grid;
   String country;
   String name;
@@ -12260,7 +12415,7 @@ void enqueueQrzLookup(const String &callsign) {
   qrzQueue[qrzQueueLen++] = item;
 }
 
-// Pobierz spoty POTA z publicznego API i uzupełnij bufor + kolejkę QRZ
+// Pobierz spoty POTA z publicznego API i uzupeĹ‚nij bufor + kolejkÄ™ QRZ
 bool fetchPotaApi() {
   if (!wifiConnected) return false;
   auto decodeToSpots = [&](JsonDocument &doc) -> bool {
@@ -12315,9 +12470,11 @@ bool fetchPotaApi() {
     return potaSpotCount > 0;
   };
 
+  static WiFiClientSecure potaClient;
+  potaClient.setInsecure();
   HTTPClient http;
   http.setTimeout(15000);
-  if (!http.begin(potaApiUrl)) {
+  if (!http.begin(potaClient, potaApiUrl)) {
     Serial.println("[POTA] http.begin failed");
     return false;
   }
@@ -12351,7 +12508,15 @@ bool fetchPotaApi() {
   filterRootArray["spotter"] = true;
   filterRootArray["comments"] = true;
 
-  DynamicJsonDocument doc(200000);
+  // Bufory byĹ‚y wczeĹ›niej ustawione na 200 000 i 400 000 bajtĂłw - a
+  // rzeczywiste odpowiedzi POTA w logach majÄ… 8-11 KB surowego JSON-a.
+  // UrzÄ…dzenie ma w sumie ~320 KB RAM, wiÄ™c 400 KB to gwarantowane
+  // niepowodzenie alokacji za kaĹĽdym razem, a nawet 200 KB to ogromny,
+  // niepotrzebny narzut, ktĂłry mocno przyczyniaĹ‚ siÄ™ do fragmentacji sterty
+  // (i przez to do problemĂłw gdzie indziej, np. z pobieraniem pogody "po
+  // jakimĹ› czasie"). 24 KB dla wersji filtrowanej to nadal ponad 2x
+  // margines wzglÄ™dem obserwowanych rozmiarĂłw.
+  DynamicJsonDocument doc(24576);
   DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
   http.end();
   bool parsedOk = (!err && decodeToSpots(doc));
@@ -12365,9 +12530,14 @@ bool fetchPotaApi() {
     }
     Serial.println("[POTA] Filtered parse empty - retrying without filter");
 
+    if (ESP.getFreeHeap() < 80000) {
+      Serial.printf("[POTA] Skip retry: free heap=%d < 80000\n", ESP.getFreeHeap());
+      return false;
+    }
+
     HTTPClient retry;
     retry.setTimeout(8000);
-    if (!retry.begin(potaApiUrl)) {
+    if (!retry.begin(potaClient, potaApiUrl)) {
       return false;
     }
     int retryCode = retry.GET();
@@ -12376,7 +12546,7 @@ bool fetchPotaApi() {
       return false;
     }
     WiFiClient *retryStream = retry.getStreamPtr();
-    DynamicJsonDocument fullDoc(400000);
+    DynamicJsonDocument fullDoc(65536);
     DeserializationError retryErr = deserializeJson(fullDoc, *retryStream);
     retry.end();
     if (retryErr) {
@@ -12390,7 +12560,7 @@ bool fetchPotaApi() {
     }
   }
 
-  // Posortuj malejąco po czasie (ISO string porównuje się leksykograficznie poprawnie)
+  // Posortuj malejÄ…co po czasie (ISO string porĂłwnuje siÄ™ leksykograficznie poprawnie)
   for (int i = 0; i < potaSpotCount - 1; i++) {
     for (int j = i + 1; j < potaSpotCount; j++) {
       if (potaSpots[j].time > potaSpots[i].time) {
@@ -12549,9 +12719,11 @@ bool fetchQrzRawXml(const String &callsign, String &body) {
 
   String url = "https://xmldata.qrz.com/xml/current/?s=" + sessionKey +
                ";callsign=" + callsign;
+  static WiFiClientSecure qrzRawClient;
+  qrzRawClient.setInsecure();
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(url);
+  http.begin(qrzRawClient, url);
   int code = http.GET();
   if (code != 200) {
     http.end();
@@ -12581,7 +12753,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
   
   // Format: DX de SP5XYZ: 14025.0 SP9ABC Test comment 1234Z
   if (!line.startsWith("DX de")) {
-    LOGV_PRINTLN("[PARSE] Nie zaczyna siĂ„â„˘ od 'DX de' - wyjÄąâ€şcie");
+    LOGV_PRINTLN("[PARSE] Nie zaczyna siÄ‚â€žĂ˘â€žË od 'DX de' - wyjĂ„Ä…Ă˘â‚¬Ĺźcie");
     return false;
   }
   
@@ -12591,7 +12763,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
   int colonPos = line.indexOf(":", dePos);
   if (colonPos < 0) return false;
   
-  // WyciĂ„â€¦gnij spottera
+  // WyciÄ‚â€žĂ˘â‚¬Â¦gnij spottera
   String spotterPart = line.substring(dePos + 5, colonPos);
   spotterPart.trim();
   spot.spotter = spotterPart;
@@ -12600,7 +12772,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
   String rest = line.substring(colonPos + 1);
   rest.trim();
   
-  // Parsuj czĂ„â„˘stotliwoÄąâ€şĂ„â€ˇ (pierwsza liczba)
+  // Parsuj czÄ‚â€žĂ˘â€žËstotliwoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ (pierwsza liczba)
   int spacePos = rest.indexOf(" ");
   if (spacePos < 0) return false;
   
@@ -12609,7 +12781,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
   rest = rest.substring(spacePos + 1);
   rest.trim();
   
-  // Parsuj znak wywoÄąâ€šawczy (nastĂ„â„˘pne sÄąâ€šowo)
+  // Parsuj znak wywoĂ„Ä…Ă˘â‚¬Ĺˇawczy (nastÄ‚â€žĂ˘â€žËpne sĂ„Ä…Ă˘â‚¬Ĺˇowo)
   spacePos = rest.indexOf(" ");
   if (spacePos < 0) {
     spot.callsign = rest;
@@ -12619,8 +12791,8 @@ bool parseDXSpot(String line, DXSpot &spot) {
     rest = rest.substring(spacePos + 1);
     rest.trim();
     
-    // Reszta to komentarz (moÄąÄ˝e zawieraĂ„â€ˇ czas na koÄąâ€žcu)
-    // Czas jest zwykle na koÄąâ€žcu w formacie HHMMZ
+    // Reszta to komentarz (moĂ„Ä…Ă„Ëťe zawieraÄ‚â€žĂ˘â‚¬Ë‡ czas na koĂ„Ä…Ă˘â‚¬Ĺľcu)
+    // Czas jest zwykle na koĂ„Ä…Ă˘â‚¬Ĺľcu w formacie HHMMZ
     int timePos = rest.lastIndexOf("Z");
     if (timePos > 0 && rest.length() >= timePos + 1) {
       String timeStr = rest.substring(timePos - 4, timePos + 1);
@@ -12642,7 +12814,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
       }
     } else {
       spot.comment = rest;
-      // Pobierz czas z NTP (z timeout - nie blokuj jeÄąâ€şli NTP nie dziaÄąâ€ša)
+      // Pobierz czas z NTP (z timeout - nie blokuj jeĂ„Ä…Ă˘â‚¬Ĺźli NTP nie dziaĂ„Ä…Ă˘â‚¬Ĺˇa)
       struct tm timeinfo;
       if (getLocalTime(&timeinfo, 1)) { // Timeout 1 sekunda
         char timeBuffer[6];
@@ -12654,14 +12826,14 @@ bool parseDXSpot(String line, DXSpot &spot) {
     }
   }
   
-  // OkreÄąâ€şl pasmo i modulacjĂ„â„˘
+  // OkreĂ„Ä…Ă˘â‚¬Ĺźl pasmo i modulacjÄ‚â€žĂ˘â€žË
   spot.band = getBand(spot.frequency);
   spot.mode = getMode(spot.comment);
   
-  // SprÄ‚łbuj wyciĂ„â€¦gnĂ„â€¦Ă„â€ˇ locator z komentarza (format JO82LK)
+  // SprĂ„â€šĹ‚buj wyciÄ‚â€žĂ˘â‚¬Â¦gnÄ‚â€žĂ˘â‚¬Â¦Ä‚â€žĂ˘â‚¬Ë‡ locator z komentarza (format JO82LK)
   spot.locator = "";
   int commentLen = spot.comment.length();
-  if (commentLen >= 6) { // Locator ma minimum 6 znakÄ‚łw
+  if (commentLen >= 6) { // Locator ma minimum 6 znakĂ„â€šĹ‚w
     for (int i = 0; i <= commentLen - 6; i++) {
       String sub = spot.comment.substring(i, i + 6);
       if (sub.length() == 6 && 
@@ -12674,7 +12846,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
     }
   }
   
-  LOGV_PRINTLN("[PARSE] Obliczanie odlegÄąâ€šoÄąâ€şci...");
+  LOGV_PRINTLN("[PARSE] Obliczanie odlegĂ„Ä…Ă˘â‚¬ĹˇoĂ„Ä…Ă˘â‚¬Ĺźci...");
   
   spot.distance = 0;
   spot.country = "";
@@ -12682,7 +12854,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
   spot.lon = 0.0f;
   spot.hasLatLon = false;
   bool qrzConfigured = (qrzUsername.length() > 0 && qrzPassword.length() > 0);
-  // Najpierw licz z lokatora jeÄąâ€şli mamy lokalizacjĂ„â„˘ i lokator w spocie
+  // Najpierw licz z lokatora jeĂ„Ä…Ă˘â‚¬Ĺźli mamy lokalizacjÄ‚â€žĂ˘â€žË i lokator w spocie
   if ((userLatLonValid || userLocator.length() >= 4) && spot.locator.length() >= 4) {
     double userLatLocal, userLonLocal, spotLat, spotLon;
     if (userLatLonValid) {
@@ -12714,7 +12886,7 @@ bool parseDXSpot(String line, DXSpot &spot) {
   return true;
 }
 
-// Prostsze parsowanie spotu dla POTA (bez QRZ i bez obliczeÄąâ€ž dystansu)
+// Prostsze parsowanie spotu dla POTA (bez QRZ i bez obliczeĂ„Ä…Ă˘â‚¬Ĺľ dystansu)
 bool parsePotaSpot(String line, DXSpot &spot) {
   if (!line.startsWith("DX de")) {
     return false;
@@ -12805,23 +12977,23 @@ void addSpot(DXSpot spot) {
   LOGV_PRINT(" kHz, spotCount=");
   LOGV_PRINTLN(spotCount);
   
-  // PrzesuÄąâ€ž istniejĂ„â€¦ce spoty
+  // PrzesuĂ„Ä…Ă˘â‚¬Ĺľ istniejÄ‚â€žĂ˘â‚¬Â¦ce spoty
   if (spotCount < MAX_SPOTS) {
     spotCount++;
   }
   
-  // PrzesuÄąâ€ž wszystkie spoty o jeden w dÄ‚łÄąâ€š
+  // PrzesuĂ„Ä…Ă˘â‚¬Ĺľ wszystkie spoty o jeden w dĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬Ĺˇ
   for (int i = MAX_SPOTS - 1; i > 0; i--) {
     spots[i] = spots[i - 1];
   }
   
-  // Dodaj nowy spot na poczĂ„â€¦tku
+  // Dodaj nowy spot na poczÄ‚â€žĂ˘â‚¬Â¦tku
   spots[0] = spot;
   
   LOGV_PRINT("[SPOT] addSpot END, nowy spotCount=");
   LOGV_PRINTLN(spotCount);
   unlockDxSpots();
-  // logSpotList(); // WyÄąâ€šĂ„â€¦czone - nie wypisuj listy spotÄ‚łw do Serial
+  // logSpotList(); // WyĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czone - nie wypisuj listy spotĂ„â€šĹ‚w do Serial
 }
 
 void addPotaSpot(DXSpot spot) {
@@ -12890,7 +13062,7 @@ bool parseHamalertJsonSpot(const String &line, DXSpot &spot) {
   if (freq <= 0.0f) {
     return false;
   }
-  // HAMALERT i DX cluster zwykle podają kHz, ale obsłuż także MHz.
+  // HAMALERT i DX cluster zwykle podajÄ… kHz, ale obsĹ‚uĹĽ takĹĽe MHz.
   spot.frequency = (freq > 1000.0f) ? (freq / 1000.0f) : freq;
   spot.band = getBand(spot.frequency * 1000.0f);
 
@@ -13098,20 +13270,20 @@ bool fetchHamalertTelnet() {
 
 // ========== APRS-IS FUNKCJE ==========
 
-// PoÄąâ€šĂ„â€¦cz z serwerem APRS-IS
+// PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz z serwerem APRS-IS
 void connectToAPRS() {
   Serial.println("[APRS] connectToAPRS() START");
   
   if (!wifiConnected) {
-    Serial.println("[APRS] WiFi nie poÄąâ€šĂ„â€¦czony - wyjÄąâ€şcie");
+    Serial.println("[APRS] WiFi nie poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czony - wyjĂ„Ä…Ă˘â‚¬Ĺźcie");
     return;
   }
   
   if (aprsClient.connected()) {
-    // JeÄąâ€şli konfiguracja siĂ„â„˘ zmieniÄąâ€ša, rozÄąâ€šĂ„â€¦cz i poÄąâ€šĂ„â€¦cz ponownie
-    Serial.println("[APRS] JuÄąÄ˝ poÄąâ€šĂ„â€¦czony - sprawdzam czy potrzeba reconnect...");
-    // MoÄąÄ˝na dodaĂ„â€ˇ sprawdzenie czy konfiguracja siĂ„â„˘ zmieniÄąâ€ša, ale na razie zostawiamy jak jest
-    // W razie potrzeby reconnect nastĂ„â€¦pi automatycznie przez watchdog
+    // JeĂ„Ä…Ă˘â‚¬Ĺźli konfiguracja siÄ‚â€žĂ˘â€žË zmieniĂ„Ä…Ă˘â‚¬Ĺˇa, rozĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz i poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz ponownie
+    Serial.println("[APRS] JuĂ„Ä…Ă„Ëť poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czony - sprawdzam czy potrzeba reconnect...");
+    // MoĂ„Ä…Ă„Ëťna dodaÄ‚â€žĂ˘â‚¬Ë‡ sprawdzenie czy konfiguracja siÄ‚â€žĂ˘â€žË zmieniĂ„Ä…Ă˘â‚¬Ĺˇa, ale na razie zostawiamy jak jest
+    // W razie potrzeby reconnect nastÄ‚â€žĂ˘â‚¬Â¦pi automatycznie przez watchdog
     return;
   }
   
@@ -13122,7 +13294,7 @@ void connectToAPRS() {
   
   lastAPRSAttempt = now;
   
-  Serial.print("[APRS] ÄąÂĂ„â€¦czenie z APRS-IS: ");
+  Serial.print("[APRS] Ă„Ä…Ă‚ÂÄ‚â€žĂ˘â‚¬Â¦czenie z APRS-IS: ");
   Serial.print(aprsIsHost);
   Serial.print(":");
   Serial.println(aprsIsPort);
@@ -13139,15 +13311,15 @@ void connectToAPRS() {
     Serial.println(aprsIsHost);
   }
   
-  Serial.println("[APRS] WywoÄąâ€šanie aprsClient.connect()...");
+  Serial.println("[APRS] WywoĂ„Ä…Ă˘â‚¬Ĺˇanie aprsClient.connect()...");
   unsigned long connectStart = millis();
   
-  // Ustaw timeout poÄąâ€šĂ„â€¦czenia (2.5 sekundy)
+  // Ustaw timeout poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia (2.5 sekundy)
   aprsClient.setTimeout(2500);
   
   if (aprsClient.connect(aprsIsHost.c_str(), aprsIsPort)) {
     unsigned long connectTime = millis() - connectStart;
-    Serial.print("[APRS] PoÄąâ€šĂ„â€¦czono z APRS-IS! (czas: ");
+    Serial.print("[APRS] PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czono z APRS-IS! (czas: ");
     Serial.print(connectTime);
     Serial.println("ms)");
     aprsConnected = true;
@@ -13155,12 +13327,12 @@ void connectToAPRS() {
     aprsLoginSent = false;
     lastAPRSRxMs = millis();
     
-    // Zaplanuj wysÄąâ€šanie loginu
-    delay(500); // KrÄ‚łtkie opÄ‚łÄąĹźnienie przed loginem
+    // Zaplanuj wysĂ„Ä…Ă˘â‚¬Ĺˇanie loginu
+    delay(500); // KrĂ„â€šĹ‚tkie opĂ„â€šĹ‚Ă„Ä…ÄąĹşnienie przed loginem
     sendAPRSLogin();
   } else {
     unsigned long connectTime = millis() - connectStart;
-    Serial.print("[APRS] BÄąâ€šĂ„â€¦d poÄąâ€šĂ„â€¦czenia z APRS-IS (czas: ");
+    Serial.print("[APRS] BĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦d poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia z APRS-IS (czas: ");
     Serial.print(connectTime);
     Serial.println("ms)");
     aprsConnected = false;
@@ -13168,42 +13340,42 @@ void connectToAPRS() {
   Serial.println("[APRS] connectToAPRS() END");
 }
 
-// Wyślij login do APRS-IS
+// WyĹ›lij login do APRS-IS
 void sendAPRSLogin() {
   if (!aprsConnected || !aprsClient.connected()) {
-    Serial.println("[APRS] Nie mozna wysłać loginu - brak połączenia");
+    Serial.println("[APRS] Nie mozna wysĹ‚aÄ‡ loginu - brak poĹ‚Ä…czenia");
     return;
   }
   
-  // Format loginu: user Callsign pass 23123 vers ESP32-HAM-CLOCK 1.3
+  // Format loginu: user Callsign pass 23123 vers ESP32-HAM-CLOCK 1.4
   String login = "user ";
   login += getAprsTxCallsignWithSsid();
   login += " pass ";
   login += String(aprsPasscode);
-  login += " vers ESP32-HAM-CLOCK 1.3";
+  login += " vers ESP32-HAM-CLOCK 1.4";
   
-  Serial.print("[APRS] Wysyłanie loginu: ");
+  Serial.print("[APRS] WysyĹ‚anie loginu: ");
   Serial.println(login);
   
   aprsClient.println(login);
   aprsLoginSent = true;
   lastAPRSRxMs = millis();
   
-  // Po zalogowaniu wyÄąâ€şlij filtr
+  // Po zalogowaniu wyĂ„Ä…Ă˘â‚¬Ĺźlij filtr
   delay(500);
   sendAPRSFilter();
 }
 
-// WyÄąâ€şlij komendĂ„â„˘ filtra do APRS-IS
+// WyĂ„Ä…Ă˘â‚¬Ĺźlij komendÄ‚â€žĂ˘â€žË filtra do APRS-IS
 void sendAPRSFilter() {
   if (!aprsConnected || !aprsClient.connected()) {
-    Serial.println("[APRS] Nie moÄąÄ˝na wysÄąâ€šaĂ„â€ˇ filtra - brak poÄąâ€šĂ„â€¦czenia");
+    Serial.println("[APRS] Nie moĂ„Ä…Ă„Ëťna wysĂ„Ä…Ă˘â‚¬ĹˇaÄ‚â€žĂ˘â‚¬Ë‡ filtra - brak poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia");
     return;
   }
   
   // Format filtra: #filter r/52.40/16.92/50
-  // UÄąÄ˝ywamy wspÄ‚łÄąâ€šrzĂ„â„˘dnych z sekcji "Moja Stacja"
-  double filterLat = userLatLonValid ? userLat : 52.40;  // Fallback jeÄąâ€şli nie ustawione
+  // UĂ„Ä…Ă„Ëťywamy wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych z sekcji "Moja Stacja"
+  double filterLat = userLatLonValid ? userLat : 52.40;  // Fallback jeĂ„Ä…Ă˘â‚¬Ĺźli nie ustawione
   double filterLon = userLatLonValid ? userLon : 16.92;
   String filter = "#filter r/";
   filter += String(filterLat, 2);
@@ -13212,7 +13384,7 @@ void sendAPRSFilter() {
   filter += "/";
   filter += String(aprsFilterRadius);
   
-  Serial.print("[APRS] WysyÄąâ€šanie filtra: ");
+  Serial.print("[APRS] WysyĂ„Ä…Ă˘â‚¬Ĺˇanie filtra: ");
   Serial.println(filter);
   
   aprsClient.println(filter);
@@ -13566,7 +13738,7 @@ void sendAprsPosition() {
     return;
   }
   if (!userLatLonValid) {
-    Serial.println("[APRS] Pomijam TX pozycji - brak poprawnych współrzędnych użytkownika");
+    Serial.println("[APRS] Pomijam TX pozycji - brak poprawnych wspĂłĹ‚rzÄ™dnych uĹĽytkownika");
     return;
   }
 
@@ -13589,7 +13761,7 @@ void sendAprsPosition() {
   frame += lonStr;
   frame += aprsSymbolCode;
   frame += " ";
-  bool useProjectComment = (((aprsBeaconTxCount + 1) % 5) == 0); // co piąty beacon
+  bool useProjectComment = (((aprsBeaconTxCount + 1) % 5) == 0); // co piÄ…ty beacon
   String comment = useProjectComment ? String(APRS_POSITION_COMMENT)
                                      : sanitizeAprsComment(aprsUserComment);
   frame += comment;
@@ -13598,16 +13770,16 @@ void sendAprsPosition() {
   lastAPRSPositionTxMs = millis();
   aprsBeaconTxCount++;
 
-  Serial.print("[APRS] Wysłano pozycję: ");
+  Serial.print("[APRS] WysĹ‚ano pozycjÄ™: ");
   Serial.println(frame);
 }
 
-// Parsuj ramkĂ„â„˘ APRS
-// Format przykÄąâ€šadowy: SP3KON-1>APRS,TCPIP*,qAC,T2POLAND:!5202.40N/01655.12E#PHG5130/Poznan
+// Parsuj ramkÄ‚â€žĂ˘â€žË APRS
+// Format przykĂ„Ä…Ă˘â‚¬Ĺˇadowy: SP3KON-1>APRS,TCPIP*,qAC,T2POLAND:!5202.40N/01655.12E#PHG5130/Poznan
 bool parseAPRSFrame(String line, APRSStation &station) {
   LOGV_PRINTF("[APRS] Parsing frame: %s\n", line.c_str());
   
-  // WyczyÄąâ€şĂ„â€ˇ strukturĂ„â„˘
+  // WyczyĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ strukturÄ‚â€žĂ˘â€žË
   station.time = "";
   station.callsign = "";
   station.symbol = "";
@@ -13632,27 +13804,27 @@ bool parseAPRSFrame(String line, APRSStation &station) {
   // Parsuj callsign (przed >)
   int gtPos = line.indexOf('>');
   if (gtPos < 0) {
-    LOGV_PRINTLN("[APRS] Brak znaku '>' w ramce - nieprawidÄąâ€šowy format");
+    LOGV_PRINTLN("[APRS] Brak znaku '>' w ramce - nieprawidĂ„Ä…Ă˘â‚¬Ĺˇowy format");
     return false;
   }
   station.callsign = line.substring(0, gtPos);
   station.callsign.trim();
   LOGV_PRINTF("[APRS] Callsign: %s\n", station.callsign.c_str());
 
-  // Najpierw sprÄ‚łbuj dekodowaĂ„â€ˇ Mic-E / skompresowane / obiekty z gotowego parsera
+  // Najpierw sprĂ„â€šĹ‚buj dekodowaÄ‚â€žĂ˘â‚¬Ë‡ Mic-E / skompresowane / obiekty z gotowego parsera
   bool advancedParsed = parseAprsAdvancedPosition(line, station);
   if (advancedParsed) {
     LOGV_PRINTF("[APRS] Advanced decode lat/lon: %.6f, %.6f\n", station.lat, station.lon);
   }
   
-  // Parsuj pozycjĂ„â„˘ GPS (prosty parser) tylko jeÄąâ€şli advanced nie zadziaÄąâ€šaÄąâ€š
+  // Parsuj pozycjÄ‚â€žĂ˘â€žË GPS (prosty parser) tylko jeĂ„Ä…Ă˘â‚¬Ĺźli advanced nie zadziaĂ„Ä…Ă˘â‚¬ĹˇaĂ„Ä…Ă˘â‚¬Ĺˇ
   // Szukaj formatu: !5202.40N/01655.12E, @5202.40N/01655.12E, =5202.40N/01655.12E, lub ;...*HHMMzDDMM.mmN/DDDMM.mmE
   int posStart = -1;
   char tableSymbol = 0;
-  int commentBeforePos = -1; // Pozycja poczĂ„â€¦tku komentarza przed timestampem (dla formatu z ;)
+  int commentBeforePos = -1; // Pozycja poczÄ‚â€žĂ˘â‚¬Â¦tku komentarza przed timestampem (dla formatu z ;)
   
   if (!advancedParsed) {
-  // Szukaj standardowych formatÄ‚łw pozycji (!, @, =)
+  // Szukaj standardowych formatĂ„â€šĹ‚w pozycji (!, @, =)
   posStart = line.indexOf('!');
   if (posStart >= 0) {
     tableSymbol = '!';
@@ -13668,7 +13840,7 @@ bool parseAPRSFrame(String line, APRSStation &station) {
     }
   }
   
-  // JeÄąâ€şli nie znaleziono standardowych formatÄ‚łw, szukaj w komentarzu (format z ;)
+  // JeĂ„Ä…Ă˘â‚¬Ĺźli nie znaleziono standardowych formatĂ„â€šĹ‚w, szukaj w komentarzu (format z ;)
   if (posStart < 0) {
     int colonPos = line.indexOf(':');
     if (colonPos >= 0) {
@@ -13676,15 +13848,15 @@ bool parseAPRSFrame(String line, APRSStation &station) {
       // Szukaj formatu z ; i timestampem: ;...*HHMMzDDMM.mmN/DDDMM.mmE
       int semicolonPos = commentPart.indexOf(';');
       if (semicolonPos >= 0) {
-        // Zapisz pozycjĂ„â„˘ poczĂ„â€¦tku komentarza przed timestampem
+        // Zapisz pozycjÄ‚â€žĂ˘â€žË poczÄ‚â€žĂ˘â‚¬Â¦tku komentarza przed timestampem
         commentBeforePos = colonPos + 1 + semicolonPos + 1; // +1 bo colonPos, +1 bo po ';'
         // Szukaj timestampu *HHMMz
         int timestampPos = commentPart.indexOf('*', semicolonPos);
         if (timestampPos >= 0 && timestampPos + 7 < commentPart.length()) {
-          // SprawdÄąĹź czy po timestampie jest pozycja (format: *HHMMzDDMM.mmN)
+          // SprawdĂ„Ä…ÄąĹş czy po timestampie jest pozycja (format: *HHMMzDDMM.mmN)
           char zChar = commentPart.charAt(timestampPos + 6);
           if (zChar == 'z' || zChar == 'Z') {
-            // Pozycja zaczyna siĂ„â„˘ po 'z'
+            // Pozycja zaczyna siÄ‚â€žĂ˘â€žË po 'z'
             posStart = colonPos + 1 + timestampPos + 7; // +1 bo colonPos, +timestampPos, +7 bo "*HHMMz"
             tableSymbol = ';';
           }
@@ -13694,25 +13866,25 @@ bool parseAPRSFrame(String line, APRSStation &station) {
   }
   
   if (posStart < 0) {
-    // Brak pozycji - sprÄ‚łbuj wyciĂ„â€¦gnĂ„â€¦Ă„â€ˇ tylko callsign i komentarz
+    // Brak pozycji - sprĂ„â€šĹ‚buj wyciÄ‚â€žĂ˘â‚¬Â¦gnÄ‚â€žĂ˘â‚¬Â¦Ä‚â€žĂ˘â‚¬Ë‡ tylko callsign i komentarz
     LOGV_PRINTLN("[APRS] Brak pozycji GPS w ramce");
     int colonPos = line.indexOf(':');
     if (colonPos >= 0) {
       station.comment = line.substring(colonPos + 1);
       station.comment.trim();
     }
-    return true; // ZwrÄ‚łĂ„â€ˇ true nawet bez pozycji
+    return true; // ZwrĂ„â€šĹ‚Ä‚â€žĂ˘â‚¬Ë‡ true nawet bez pozycji
   }
   
-  LOGV_PRINTF("[APRS] Znaleziono pozycjĂ„â„˘ na indeksie %d, symbol tabeli: %c\n", posStart, tableSymbol);
+  LOGV_PRINTF("[APRS] Znaleziono pozycjÄ‚â€žĂ˘â€žË na indeksie %d, symbol tabeli: %c\n", posStart, tableSymbol);
   
-  // Symbol table ustawimy po wyciĂ„â€¦gniĂ„â„˘ciu pozycji
+  // Symbol table ustawimy po wyciÄ‚â€žĂ˘â‚¬Â¦gniÄ‚â€žĂ˘â€žËciu pozycji
   
-  // Wyznacz poczĂ„â€¦tek pozycji (lat) zaleÄąÄ˝nie od formatu
+  // Wyznacz poczÄ‚â€žĂ˘â‚¬Â¦tek pozycji (lat) zaleĂ„Ä…Ă„Ëťnie od formatu
   bool posStartIsSymbol = (tableSymbol == '!' || tableSymbol == '@' || tableSymbol == '=' || tableSymbol == '/');
-  int latStart = posStartIsSymbol ? (posStart + 1) : posStart; // dla ';' posStart wskazuje juÄąÄ˝ na lat
+  int latStart = posStartIsSymbol ? (posStart + 1) : posStart; // dla ';' posStart wskazuje juĂ„Ä…Ă„Ëť na lat
 
-  // ObsÄąâ€šuga timestampu dla @ lub /: @DDHHMMh... lub /DDHHMMh...
+  // ObsĂ„Ä…Ă˘â‚¬Ĺˇuga timestampu dla @ lub /: @DDHHMMh... lub /DDHHMMh...
   if (tableSymbol == '@' || tableSymbol == '/') {
     if (posStart + 7 < line.length()) {
       bool tsDigits = true;
@@ -13730,7 +13902,7 @@ bool parseAPRSFrame(String line, APRSStation &station) {
     }
   }
 
-  // SprawdÄąĹź czy jest format z "/" czy bez "/"
+  // SprawdĂ„Ä…ÄąĹş czy jest format z "/" czy bez "/"
   int slashPos = line.indexOf('/', latStart);
   bool hasSlash = (slashPos >= 0);
   
@@ -13739,12 +13911,12 @@ bool parseAPRSFrame(String line, APRSStation &station) {
 
   if (hasSlash) {
     // Format z "/": !DDMM.mmN/DDDMM.mmEsymbol
-    // Parsuj szerokoÄąâ€şĂ„â€ˇ geograficznĂ„â€¦: 5202.40N (format: DDMM.mmN)
+    // Parsuj szerokoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ geograficznÄ‚â€žĂ˘â‚¬Â¦: 5202.40N (format: DDMM.mmN)
     if (latStart + 7 < line.length()) {
       String latStr = line.substring(latStart, latStart + 7);
       if (latStr.length() == 7) {
         char dir = line.charAt(latStart + 7);
-        // UÄąÄ˝yj funkcji convertToDecimal do parsowania
+        // UĂ„Ä…Ă„Ëťyj funkcji convertToDecimal do parsowania
         float parsedLat = convertToDecimal(latStr, dir);
         if (!isnan(parsedLat)) {
           station.lat = parsedLat;
@@ -13756,12 +13928,12 @@ bool parseAPRSFrame(String line, APRSStation &station) {
       }
     }
     
-    // Parsuj dÄąâ€šugoÄąâ€şĂ„â€ˇ geograficznĂ„â€¦: 01655.12E (format: DDDMM.mmE)
+    // Parsuj dĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ geograficznÄ‚â€žĂ˘â‚¬Â¦: 01655.12E (format: DDDMM.mmE)
     if (slashPos >= 0 && slashPos + 9 < line.length()) {
       String lonStr = line.substring(slashPos + 1, slashPos + 9);
       if (lonStr.length() == 8) {
         char dir = line.charAt(slashPos + 9);
-        // UÄąÄ˝yj funkcji convertToDecimal do parsowania
+        // UĂ„Ä…Ă„Ëťyj funkcji convertToDecimal do parsowania
         float parsedLon = convertToDecimal(lonStr, dir);
         if (!isnan(parsedLon)) {
           station.lon = parsedLon;
@@ -13777,19 +13949,19 @@ bool parseAPRSFrame(String line, APRSStation &station) {
     if (slashPos >= 0) {
       station.symbolTable = line.substring(slashPos, slashPos + 1);
     }
-    // WyciĂ„â€¦gnij symbol code (znak po dÄąâ€šugoÄąâ€şci geograficznej, po "/")
+    // WyciÄ‚â€žĂ˘â‚¬Â¦gnij symbol code (znak po dĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬Ĺźci geograficznej, po "/")
     // Format: !DDMM.mmN/DDDMM.mmEsymbol
     if (slashPos >= 0 && slashPos + 10 < line.length()) {
       station.symbol = line.substring(slashPos + 10, slashPos + 11);
     }
   } else {
-    // Format bez "/": DDMM.mmNsymbolDDDMM.mmE (symbol miĂ„â„˘dzy lat a lon)
-    // PrzykÄąâ€šad: 5223.73NW01655.41E lub 5225.05NL01651.66E
+    // Format bez "/": DDMM.mmNsymbolDDDMM.mmE (symbol miÄ‚â€žĂ˘â€žËdzy lat a lon)
+    // PrzykĂ„Ä…Ă˘â‚¬Ĺˇad: 5223.73NW01655.41E lub 5225.05NL01651.66E
     if (latStart + 7 < line.length()) {
       String latStr = line.substring(latStart, latStart + 7);
       if (latStr.length() == 7) {
         char dir = line.charAt(latStart + 7);
-        // UÄąÄ˝yj funkcji convertToDecimal do parsowania
+        // UĂ„Ä…Ă„Ëťyj funkcji convertToDecimal do parsowania
         float parsedLat = convertToDecimal(latStr, dir);
         if (!isnan(parsedLat)) {
           station.lat = parsedLat;
@@ -13804,13 +13976,13 @@ bool parseAPRSFrame(String line, APRSStation &station) {
           station.symbolTable = line.substring(latStart + 8, latStart + 9);
         }
         
-        // DÄąâ€šugoÄąâ€şĂ„â€ˇ geograficzna zaczyna siĂ„â„˘ po symbolu table
+        // DĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ geograficzna zaczyna siÄ‚â€žĂ˘â€žË po symbolu table
         int lonStart = latStart + 9;
         if (lonStart + 7 < line.length()) {
           String lonStr = line.substring(lonStart, lonStart + 8);
           if (lonStr.length() == 8) {
             char dir = line.charAt(lonStart + 8);
-            // UÄąÄ˝yj funkcji convertToDecimal do parsowania
+            // UĂ„Ä…Ă„Ëťyj funkcji convertToDecimal do parsowania
             float parsedLon = convertToDecimal(lonStr, dir);
             if (!isnan(parsedLon)) {
               station.lon = parsedLon;
@@ -13820,7 +13992,7 @@ bool parseAPRSFrame(String line, APRSStation &station) {
             LOGV_PRINTF("[APRS] Parsed lon: %s%c -> %.6f\n", 
                         lonStr.c_str(), dir, station.lon);
 
-            // Symbol code jest po kierunku lon (jeÄąâ€şli wystĂ„â„˘puje)
+            // Symbol code jest po kierunku lon (jeĂ„Ä…Ă˘â‚¬Ĺźli wystÄ‚â€žĂ˘â€žËpuje)
             if (lonStart + 9 < line.length()) {
               station.symbol = line.substring(lonStart + 9, lonStart + 10);
             }
@@ -13830,10 +14002,10 @@ bool parseAPRSFrame(String line, APRSStation &station) {
     }
   }
   
-  // Ustaw flagĂ„â„˘ poprawnoÄąâ€şci pozycji tylko jeÄąâ€şli mamy lat i lon
+  // Ustaw flagÄ‚â€žĂ˘â€žË poprawnoĂ„Ä…Ă˘â‚¬Ĺźci pozycji tylko jeĂ„Ä…Ă˘â‚¬Ĺźli mamy lat i lon
   station.hasLatLon = (latOk && lonOk);
 
-  // WyciĂ„â€¦gnij komentarz (po symbolu i pozycji)
+  // WyciÄ‚â€žĂ˘â‚¬Â¦gnij komentarz (po symbolu i pozycji)
   // Format z "/": !5202.40N/01655.12E#symbol/komentarz lub !5202.40N/01655.12E#symbol komentarz
   // Format bez "/": DDMM.mmNsymbolDDDMM.mmE&komentarz
   // Format z ";": ;komentarz_przed*HHMMzDDMM.mmNsymbolDDDMM.mmE&komentarz_po
@@ -13842,14 +14014,14 @@ bool parseAPRSFrame(String line, APRSStation &station) {
     String fullComment = "";
     
     if (tableSymbol == ';' && commentBeforePos >= 0) {
-      // Format z ";": komentarz skÄąâ€šada siĂ„â„˘ z czĂ„â„˘Äąâ€şci przed timestampem i po pozycji
-      // CzĂ„â„˘Äąâ€şĂ„â€ˇ przed timestampem
+      // Format z ";": komentarz skĂ„Ä…Ă˘â‚¬Ĺˇada siÄ‚â€žĂ˘â€žË z czÄ‚â€žĂ˘â€žËĂ„Ä…Ă˘â‚¬Ĺźci przed timestampem i po pozycji
+      // CzÄ‚â€žĂ˘â€žËĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ przed timestampem
       int timestampStart = line.indexOf('*', commentBeforePos);
       if (timestampStart > commentBeforePos) {
         fullComment = line.substring(commentBeforePos, timestampStart);
       }
       
-      // CzĂ„â„˘Äąâ€şĂ„â€ˇ po pozycji
+      // CzÄ‚â€žĂ˘â€žËĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ po pozycji
       int commentAfterPos = -1;
       if (hasSlash) {
         int afterSymbol = slashPos + 11;
@@ -13862,7 +14034,7 @@ bool parseAPRSFrame(String line, APRSStation &station) {
           }
         }
       } else {
-        // Format bez "/": komentarz zaczyna siĂ„â„˘ po lon
+        // Format bez "/": komentarz zaczyna siÄ‚â€žĂ˘â€žË po lon
         int afterLon = latStart + 18;
         if (afterLon < line.length()) {
           char c = line.charAt(afterLon);
@@ -13888,37 +14060,37 @@ bool parseAPRSFrame(String line, APRSStation &station) {
       int commentStart = colonPos + 1;
       
       if (hasSlash && slashPos >= 0) {
-        // Format z "/": komentarz zaczyna siĂ„â„˘ po symbolu
+        // Format z "/": komentarz zaczyna siÄ‚â€žĂ˘â€žË po symbolu
         int afterSymbol = slashPos + 11;
         if (afterSymbol < line.length()) {
           char c = line.charAt(afterSymbol);
           if (c == '#' || c == '/') {
             commentStart = afterSymbol + 1;
           } else {
-            // Komentarz zaczyna siĂ„â„˘ zaraz po symbolu
+            // Komentarz zaczyna siÄ‚â€žĂ˘â€žË zaraz po symbolu
             commentStart = afterSymbol;
           }
         }
       } else {
-        // Format bez "/": komentarz zaczyna siĂ„â„˘ po lon (po kierunku E/W)
+        // Format bez "/": komentarz zaczyna siÄ‚â€žĂ˘â€žË po lon (po kierunku E/W)
         int afterLon = latStart + 18;
         if (afterLon < line.length()) {
           char c = line.charAt(afterLon);
           if (c == '&' || c == '#' || c == '/') {
             commentStart = afterLon + 1;
           } else {
-            // Komentarz zaczyna siĂ„â„˘ zaraz po lon
+            // Komentarz zaczyna siÄ‚â€žĂ˘â€žË zaraz po lon
             commentStart = afterLon;
           }
         }
       }
       
-      // JeÄąâ€şli commentStart jest przed koÄąâ€žcem linii, wyciĂ„â€¦gnij komentarz
+      // JeĂ„Ä…Ă˘â‚¬Ĺźli commentStart jest przed koĂ„Ä…Ă˘â‚¬Ĺľcem linii, wyciÄ‚â€žĂ˘â‚¬Â¦gnij komentarz
       if (commentStart < line.length() && commentStart >= colonPos + 1) {
         station.comment = line.substring(commentStart);
         station.comment.trim();
       } else if (commentStart < colonPos + 1) {
-        // JeÄąâ€şli nie znaleziono komentarza po pozycji, uÄąÄ˝yj caÄąâ€šej czĂ„â„˘Äąâ€şci po ":"
+        // JeĂ„Ä…Ă˘â‚¬Ĺźli nie znaleziono komentarza po pozycji, uĂ„Ä…Ă„Ëťyj caĂ„Ä…Ă˘â‚¬Ĺˇej czÄ‚â€žĂ˘â€žËĂ„Ä…Ă˘â‚¬Ĺźci po ":"
         station.comment = line.substring(colonPos + 1);
         station.comment.trim();
       }
@@ -13926,7 +14098,7 @@ bool parseAPRSFrame(String line, APRSStation &station) {
   }
   } // !advancedParsed
   
-  // SprÄ‚łbuj wyciĂ„â€¦gnĂ„â€¦Ă„â€ˇ czĂ„â„˘stotliwoÄąâ€şĂ„â€ˇ z komentarza
+  // SprĂ„â€šĹ‚buj wyciÄ‚â€žĂ˘â‚¬Â¦gnÄ‚â€žĂ˘â‚¬Â¦Ä‚â€žĂ˘â‚¬Ë‡ czÄ‚â€žĂ˘â€žËstotliwoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ z komentarza
   if (station.comment.length() > 0) {
     float freq = 0.0f;
     if (extractAPRSFrequencyMHz(station.comment, freq)) {
@@ -13934,11 +14106,11 @@ bool parseAPRSFrame(String line, APRSStation &station) {
     }
   }
   
-  // Oblicz odlegÄąâ€šoÄąâ€şĂ„â€ˇ jeÄąâ€şli mamy pozycjĂ„â„˘
-  // UÄąÄ˝ywamy wspÄ‚łÄąâ€šrzĂ„â„˘dnych z sekcji "Moja Stacja"
+  // Oblicz odlegĂ„Ä…Ă˘â‚¬ĹˇoĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ jeĂ„Ä…Ă˘â‚¬Ĺźli mamy pozycjÄ‚â€žĂ˘â€žË
+  // UĂ„Ä…Ă„Ëťywamy wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych z sekcji "Moja Stacja"
   if (station.hasLatLon) {
-    // UÄąÄ˝yj double dla wiĂ„â„˘kszej precyzji obliczeÄąâ€ž
-    double userLatForDistance = userLatLonValid ? userLat : 52.40;  // Fallback jeÄąâ€şli nie ustawione
+    // UĂ„Ä…Ă„Ëťyj double dla wiÄ‚â€žĂ˘â€žËkszej precyzji obliczeĂ„Ä…Ă˘â‚¬Ĺľ
+    double userLatForDistance = userLatLonValid ? userLat : 52.40;  // Fallback jeĂ„Ä…Ă˘â‚¬Ĺźli nie ustawione
     double userLonForDistance = userLatLonValid ? userLon : 16.92;
     double stationLat = (double)station.lat;
     double stationLon = (double)station.lon;
@@ -13952,7 +14124,7 @@ bool parseAPRSFrame(String line, APRSStation &station) {
   return true;
 }
 
-// Dodaj nowĂ„â€¦ stacjĂ„â„˘ APRS do tablicy (bez duplikatÄ‚łw - aktualizuje istniejĂ„â€¦ce)
+// Dodaj nowÄ‚â€žĂ˘â‚¬Â¦ stacjÄ‚â€žĂ˘â€žË APRS do tablicy (bez duplikatĂ„â€šĹ‚w - aktualizuje istniejÄ‚â€žĂ˘â‚¬Â¦ce)
 void addAPRSStation(APRSStation station) {
   compactAprsStationStrings(station);
   LOGV_PRINT("[APRS] addAPRSStation: ");
@@ -13968,7 +14140,7 @@ void addAPRSStation(APRSStation station) {
   }
   LOGV_PRINTLN();
   
-  // SprawdÄąĹź czy stacja juÄąÄ˝ istnieje (po callsign)
+  // SprawdĂ„Ä…ÄąĹş czy stacja juĂ„Ä…Ă„Ëť istnieje (po callsign)
   int existingIndex = -1;
   for (int i = 0; i < aprsStationCount; i++) {
     if (aprsStations[i].callsign.equalsIgnoreCase(station.callsign)) {
@@ -13978,45 +14150,45 @@ void addAPRSStation(APRSStation station) {
   }
   
   if (existingIndex >= 0) {
-    // Stacja juÄąÄ˝ istnieje - usuÄąâ€ž jĂ„â€¦ z obecnej pozycji
+    // Stacja juĂ„Ä…Ă„Ëť istnieje - usuĂ„Ä…Ă˘â‚¬Ĺľ jÄ‚â€žĂ˘â‚¬Â¦ z obecnej pozycji
     for (int i = existingIndex; i > 0; i--) {
       aprsStations[i] = aprsStations[i - 1];
     }
     // Zaktualizuj dane stacji (nowy czas, pozycja, itp.)
     aprsStations[0] = station;
-    LOGV_PRINT("[APRS] Stacja juÄąÄ˝ istnieje - zaktualizowano na pozycji 0");
+    LOGV_PRINT("[APRS] Stacja juĂ„Ä…Ă„Ëť istnieje - zaktualizowano na pozycji 0");
   } else {
-    // Nowa stacja - dodaj na poczĂ„â€¦tku
+    // Nowa stacja - dodaj na poczÄ‚â€žĂ˘â‚¬Â¦tku
     if (aprsStationCount < MAX_APRS_STATIONS) {
       aprsStationCount++;
     }
     
-    // PrzesuÄąâ€ž wszystkie stacje o jeden w dÄ‚łÄąâ€š
+    // PrzesuĂ„Ä…Ă˘â‚¬Ĺľ wszystkie stacje o jeden w dĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬Ĺˇ
     for (int i = MAX_APRS_STATIONS - 1; i > 0; i--) {
       aprsStations[i] = aprsStations[i - 1];
     }
     
-    // Dodaj nowĂ„â€¦ stacjĂ„â„˘ na poczĂ„â€¦tku
+    // Dodaj nowÄ‚â€žĂ˘â‚¬Â¦ stacjÄ‚â€žĂ˘â€žË na poczÄ‚â€žĂ˘â‚¬Â¦tku
     aprsStations[0] = station;
-    LOGV_PRINT("[APRS] Dodano nowĂ„â€¦ stacjĂ„â„˘");
+    LOGV_PRINT("[APRS] Dodano nowÄ‚â€žĂ˘â‚¬Â¦ stacjÄ‚â€žĂ˘â€žË");
   }
   
   LOGV_PRINT("[APRS] addAPRSStation END, nowy aprsStationCount=");
   LOGV_PRINTLN(aprsStationCount);
 }
 
-// ObsÄąâ€šuga danych z APRS-IS
+// ObsĂ„Ä…Ă˘â‚¬Ĺˇuga danych z APRS-IS
 void handleAPRSData() {
   if (!aprsConnected || !aprsClient.connected()) {
     if (aprsConnected) {
-      LOGV_PRINTLN("[APRS] PoÄąâ€šĂ„â€¦czenie zerwane - reset flagÄ‚łw");
+      LOGV_PRINTLN("[APRS] PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenie zerwane - reset flagĂ„â€šĹ‚w");
     }
     aprsConnected = false;
     aprsLoginSent = false;
     return;
   }
   
-  // Odczytaj dostĂ„â„˘pne dane
+  // Odczytaj dostÄ‚â€žĂ˘â€žËpne dane
   while (aprsClient.available()) {
     unsigned char c = (unsigned char)aprsClient.read();
     lastAPRSRxMs = millis();
@@ -14026,14 +14198,14 @@ void handleAPRSData() {
         String line = aprsBuffer;
         aprsBuffer = "";
         
-        // Ignoruj linie zaczynajĂ„â€¦ce siĂ„â„˘ od # (komentarze serwera)
+        // Ignoruj linie zaczynajÄ‚â€žĂ˘â‚¬Â¦ce siÄ‚â€žĂ˘â€žË od # (komentarze serwera)
         if (line.startsWith("#")) {
           Serial.print("[APRS] Server: ");
           Serial.println(line);
           continue;
         }
         
-        // Parsuj ramkĂ„â„˘ APRS
+        // Parsuj ramkÄ‚â€žĂ˘â€žË APRS
         APRSStation station;
         if (parseAPRSFrame(line, station)) {
           addAPRSStation(station);
@@ -14054,7 +14226,7 @@ void handleAPRSData() {
     } else if (c != 0) {
       // Keep control bytes (e.g. 0x1C/0x1D) for Mic-E decode compatibility.
       aprsBuffer += (char)c;
-      // Ograniczenie dÄąâ€šugoÄąâ€şci bufora (zapobieganie przepeÄąâ€šnieniu)
+      // Ograniczenie dĂ„Ä…Ă˘â‚¬ĹˇugoĂ„Ä…Ă˘â‚¬Ĺźci bufora (zapobieganie przepeĂ„Ä…Ă˘â‚¬Ĺˇnieniu)
       if (aprsBuffer.length() > 512) {
         aprsBuffer = aprsBuffer.substring(aprsBuffer.length() - 256);
       }
@@ -14066,7 +14238,7 @@ void handleAPRSData() {
 
 void startAPMode() {
   // Stabilny portal konfiguracyjny: sam AP (bez STA w tle),
-  // ÄąÄ˝eby nie gubiĂ„â€ˇ poÄąâ€šĂ„â€¦czenia na telefonie/PC przy zmianie kanaÄąâ€šu przez STA.
+  // Ă„Ä…Ă„Ëťeby nie gubiÄ‚â€žĂ˘â‚¬Ë‡ poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia na telefonie/PC przy zmianie kanaĂ„Ä…Ă˘â‚¬Ĺˇu przez STA.
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASSWORD);
   Serial.println("AP Mode uruchomiony");
@@ -14075,7 +14247,7 @@ void startAPMode() {
   Serial.print("IP: ");
   Serial.println(WiFi.softAPIP());
   
-  // Aktualizuj wyÄąâ€şwietlacz TFT z IP AP (jeÄąâ€şli jesteÄąâ€şmy na ekranie 1)
+  // Aktualizuj wyĂ„Ä…Ă˘â‚¬Ĺźwietlacz TFT z IP AP (jeĂ„Ä…Ă˘â‚¬Ĺźli jesteĂ„Ä…Ă˘â‚¬Ĺźmy na ekranie 1)
 #ifdef ENABLE_TFT_DISPLAY
   updateScreen1();
 #endif
@@ -14133,7 +14305,7 @@ bool connectToWiFi() {
     }
 
     Serial.println("");
-    Serial.println("BÄąâ€šĂ„â€¦d poÄąâ€šĂ„â€¦czenia WiFi");
+    Serial.println("BĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦d poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia WiFi");
     Serial.print("WiFi.status(): ");
     Serial.println((int)WiFi.status());
 
@@ -14159,7 +14331,7 @@ bool connectToWiFi() {
       }
     }
     if (!found) {
-      Serial.println("UWAGA: Nie widzĂ„â„˘ Twojego SSID w skanie (moÄąÄ˝e 5GHz / inny SSID / poza zasiĂ„â„˘giem / ukryte SSID).");
+      Serial.println("UWAGA: Nie widzÄ‚â€žĂ˘â€žË Twojego SSID w skanie (moĂ„Ä…Ă„Ëťe 5GHz / inny SSID / poza zasiÄ‚â€žĂ˘â€žËgiem / ukryte SSID).");
     }
 
     return false;
@@ -14178,19 +14350,19 @@ bool connectToWiFi() {
     bool ok = attemptConnect(cred);
     if (ok) {
       wifiConnected = true;
-      Serial.print("PoÄąâ€šĂ„â€¦czono z SSID: ");
+      Serial.print("PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czono z SSID: ");
       Serial.println(cred.ssid);
       Serial.print("IP: ");
       Serial.println(WiFi.localIP());
 
-      // Aktualizuj wyÄąâ€şwietlacz TFT z IP STA (jeÄąâ€şli jesteÄąâ€şmy na ekranie 1)
+      // Aktualizuj wyĂ„Ä…Ă˘â‚¬Ĺźwietlacz TFT z IP STA (jeĂ„Ä…Ă˘â‚¬Ĺźli jesteĂ„Ä…Ă˘â‚¬Ĺźmy na ekranie 1)
 #ifdef ENABLE_TFT_DISPLAY
       updateScreen1();
 #endif
 
       return true;
     } else {
-      Serial.println("PrÄ‚łba poÄąâ€šĂ„â€¦czenia nieudana dla SSID: " + cred.ssid);
+      Serial.println("PrĂ„â€šĹ‚ba poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia nieudana dla SSID: " + cred.ssid);
     }
   }
 
@@ -14204,28 +14376,28 @@ void connectToCluster() {
   Serial.println("[CLUSTER] connectToCluster() START");
   
   if (!wifiConnected) {
-    Serial.println("[CLUSTER] WiFi nie poÄąâ€šĂ„â€¦czony - wyjÄąâ€şcie");
+    Serial.println("[CLUSTER] WiFi nie poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czony - wyjĂ„Ä…Ă˘â‚¬Ĺźcie");
     return;
   }
   
   if (telnetClient.connected()) {
-    Serial.println("[CLUSTER] JuÄąÄ˝ poÄąâ€šĂ„â€¦czony - wyjÄąâ€şcie");
+    Serial.println("[CLUSTER] JuĂ„Ä…Ă„Ëť poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czony - wyjĂ„Ä…Ă˘â‚¬Ĺźcie");
     return;
   }
   
   unsigned long now = millis();
   if (now - lastTelnetAttempt < 5000) {
-    return; // Cichy return - nie spamuj logu (to byÄąâ€šo gÄąâ€šÄ‚łwne ÄąĹźrÄ‚łdÄąâ€šo spamu!)
+    return; // Cichy return - nie spamuj logu (to byĂ„Ä…Ă˘â‚¬Ĺˇo gĂ„Ä…Ă˘â‚¬ĹˇĂ„â€šĹ‚wne Ă„Ä…ÄąĹşrĂ„â€šĹ‚dĂ„Ä…Ă˘â‚¬Ĺˇo spamu!)
   }
   
   lastTelnetAttempt = now;
   
-  Serial.print("[CLUSTER] ÄąÂĂ„â€¦czenie z DX Cluster: ");
+  Serial.print("[CLUSTER] Ă„Ä…Ă‚ÂÄ‚â€žĂ˘â‚¬Â¦czenie z DX Cluster: ");
   Serial.print(clusterHost);
   Serial.print(":");
   Serial.println(clusterPort);
 
-  // Diagnostyka DNS (czĂ„â„˘sty problem gdy host nie rozwiĂ„â€¦zuje siĂ„â„˘ na ESP32)
+  // Diagnostyka DNS (czÄ‚â€žĂ˘â€žËsty problem gdy host nie rozwiÄ‚â€žĂ˘â‚¬Â¦zuje siÄ‚â€žĂ˘â€žË na ESP32)
   IPAddress resolvedIp;
   if (WiFi.hostByName(clusterHost.c_str(), resolvedIp)) {
     Serial.print("DNS OK: ");
@@ -14237,13 +14409,13 @@ void connectToCluster() {
     Serial.println(clusterHost);
   }
   
-  Serial.println("[CLUSTER] WywoÄąâ€šanie telnetClient.connect()...");
+  Serial.println("[CLUSTER] WywoĂ„Ä…Ă˘â‚¬Ĺˇanie telnetClient.connect()...");
   unsigned long connectStart = millis();
   
   telnetClient.setTimeout(2500);
   if (telnetClient.connect(clusterHost.c_str(), clusterPort)) {
     unsigned long connectTime = millis() - connectStart;
-    Serial.print("[CLUSTER] PoÄąâ€šĂ„â€¦czono z DX Cluster! (czas: ");
+    Serial.print("[CLUSTER] PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czono z DX Cluster! (czas: ");
     Serial.print(connectTime);
     Serial.println("ms)");
     telnetConnected = true;
@@ -14253,13 +14425,13 @@ void connectToCluster() {
     lastClusterKeepAliveMs = millis();
     lastTelnetRxMs = millis();
 
-    // Zawsze wysyÄąâ€šamy login po poÄąâ€šĂ„â€¦czeniu (tak jak w projekcie referencyjnym).
-    // JeÄąâ€şli uÄąÄ˝ytkownik nie ustawiÄąâ€š znaku, uÄąÄ˝ywamy domyÄąâ€şlnego (DEFAULT_CALLSIGN).
+    // Zawsze wysyĂ„Ä…Ă˘â‚¬Ĺˇamy login po poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czeniu (tak jak w projekcie referencyjnym).
+    // JeĂ„Ä…Ă˘â‚¬Ĺźli uĂ„Ä…Ă„Ëťytkownik nie ustawiĂ„Ä…Ă˘â‚¬Ĺˇ znaku, uĂ„Ä…Ă„Ëťywamy domyĂ„Ä…Ă˘â‚¬Ĺźlnego (DEFAULT_CALLSIGN).
     clusterLoginScheduled = true;
     clusterSendLoginAtMs = millis() + 1000;
   } else {
     unsigned long connectTime = millis() - connectStart;
-    Serial.print("[CLUSTER] BÄąâ€šĂ„â€¦d poÄąâ€šĂ„â€¦czenia z DX Cluster (czas: ");
+    Serial.print("[CLUSTER] BĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦d poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia z DX Cluster (czas: ");
     Serial.print(connectTime);
     Serial.println("ms)");
     telnetConnected = false;
@@ -14284,7 +14456,7 @@ void connectToPotaCluster() {
   }
   lastPotaAttempt = now;
 
-  Serial.print("[POTA] ÄąÂĂ„â€¦czenie z POTA Cluster: ");
+  Serial.print("[POTA] Ă„Ä…Ă‚ÂÄ‚â€žĂ˘â‚¬Â¦czenie z POTA Cluster: ");
   Serial.print(potaClusterHost);
   Serial.print(":");
   Serial.println(potaClusterPort);
@@ -14302,7 +14474,7 @@ void connectToPotaCluster() {
 
   potaTelnetClient.setTimeout(2500);
   if (potaTelnetClient.connect(potaClusterHost.c_str(), potaClusterPort)) {
-    Serial.println("[POTA] PoÄąâ€šĂ„â€¦czono z POTA Cluster!");
+    Serial.println("[POTA] PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czono z POTA Cluster!");
     potaTelnetConnected = true;
     potaTelnetBuffer = "";
     pendingPotaLine = "";
@@ -14330,55 +14502,55 @@ void connectToPotaCluster() {
       potaTelnetClient.print("\r\n");
     }
   } else {
-    Serial.println("[POTA] BÄąâ€šĂ„â€¦d poÄąâ€šĂ„â€¦czenia z POTA Cluster");
+    Serial.println("[POTA] BĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦d poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia z POTA Cluster");
     potaTelnetConnected = false;
   }
 }
 
-// WyÄąâ€şlij komendĂ„â„˘ konfiguracyjnĂ„â€¦ do DX Cluster (CC-Cluster)
-// UWAGA: UÄąÄ˝ywane TYLKO do konfiguracji odbioru (set/noann, set/nowwv, set/filter, etc.)
-// NIE wysyÄąâ€ša ÄąÄ˝adnych spotÄ‚łw - urzĂ„â€¦dzenie dziaÄąâ€ša tylko w trybie odbioru
+// WyĂ„Ä…Ă˘â‚¬Ĺźlij komendÄ‚â€žĂ˘â€žË konfiguracyjnÄ‚â€žĂ˘â‚¬Â¦ do DX Cluster (CC-Cluster)
+// UWAGA: UĂ„Ä…Ă„Ëťywane TYLKO do konfiguracji odbioru (set/noann, set/nowwv, set/filter, etc.)
+// NIE wysyĂ„Ä…Ă˘â‚¬Ĺˇa Ă„Ä…Ă„Ëťadnych spotĂ„â€šĹ‚w - urzÄ‚â€žĂ˘â‚¬Â¦dzenie dziaĂ„Ä…Ă˘â‚¬Ĺˇa tylko w trybie odbioru
 void sendClusterCommand(String command) {
   if (!telnetConnected || !telnetClient.connected()) {
-    Serial.print("[CLUSTER] Nie moÄąÄ˝na wysÄąâ€šaĂ„â€ˇ komendy '");
+    Serial.print("[CLUSTER] Nie moĂ„Ä…Ă„Ëťna wysĂ„Ä…Ă˘â‚¬ĹˇaÄ‚â€žĂ˘â‚¬Ë‡ komendy '");
     Serial.print(command);
-    Serial.println("' - brak poÄąâ€šĂ„â€¦czenia");
+    Serial.println("' - brak poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia");
     return;
   }
   
-  Serial.print("[CLUSTER] WysyÄąâ€šanie komendy: ");
+  Serial.print("[CLUSTER] WysyĂ„Ä…Ă˘â‚¬Ĺˇanie komendy: ");
   Serial.println(command);
   telnetClient.print(command);
   telnetClient.print("\r\n");
-  delay(50); // KrÄ‚łtkie opÄ‚łÄąĹźnienie miĂ„â„˘dzy komendami
+  delay(50); // KrĂ„â€šĹ‚tkie opĂ„â€šĹ‚Ă„Ä…ÄąĹşnienie miÄ‚â€žĂ˘â€žËdzy komendami
 }
 
-// WyÄąâ€şlij komendy konfiguracyjne CC-Cluster po zalogowaniu
+// WyĂ„Ä…Ă˘â‚¬Ĺźlij komendy konfiguracyjne CC-Cluster po zalogowaniu
 void sendClusterConfigCommands() {
   if (!telnetConnected || !telnetClient.connected()) {
     return;
   }
   
-  Serial.println("[CLUSTER] WysyÄąâ€šanie komend konfiguracyjnych CC-Cluster...");
+  Serial.println("[CLUSTER] WysyĂ„Ä…Ă˘â‚¬Ĺˇanie komend konfiguracyjnych CC-Cluster...");
   
-  // WyÄąâ€šĂ„â€¦cz ogÄąâ€šoszenia (domyÄąâ€şlnie wÄąâ€šĂ„â€¦czone)
+  // WyĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz ogĂ„Ä…Ă˘â‚¬Ĺˇoszenia (domyĂ„Ä…Ă˘â‚¬Ĺźlnie wĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czone)
   if (clusterNoAnnouncements) {
     sendClusterCommand("set/noann");
   }
   
-  // WyÄąâ€šĂ„â€¦cz WWV (domyÄąâ€şlnie wÄąâ€šĂ„â€¦czone)
+  // WyĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz WWV (domyĂ„Ä…Ă˘â‚¬Ĺźlnie wĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czone)
   if (clusterNoWWV) {
     sendClusterCommand("set/nowwv");
   }
   
-  // WyÄąâ€šĂ„â€¦cz WCY (domyÄąâ€şlnie wÄąâ€šĂ„â€¦czone)
+  // WyĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz WCY (domyĂ„Ä…Ă˘â‚¬Ĺźlnie wĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czone)
   if (clusterNoWCY) {
     sendClusterCommand("set/nowcy");
   }
   
-  // Ustaw filtry (jeÄąâ€şli wÄąâ€šĂ„â€¦czone)
+  // Ustaw filtry (jeĂ„Ä…Ă˘â‚¬Ĺźli wĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czone)
   if (clusterUseFilters && clusterFilterCommands.length() > 0) {
-    // Parsuj i wyÄąâ€şlij komendy filtrÄ‚łw (moÄąÄ˝e byĂ„â€ˇ kilka linii oddzielonych \n)
+    // Parsuj i wyĂ„Ä…Ă˘â‚¬Ĺźlij komendy filtrĂ„â€šĹ‚w (moĂ„Ä…Ă„Ëťe byÄ‚â€žĂ˘â‚¬Ë‡ kilka linii oddzielonych \n)
     String filters = clusterFilterCommands;
     int pos = 0;
     while (pos < filters.length()) {
@@ -14394,11 +14566,11 @@ void sendClusterConfigCommands() {
       pos = nextPos + 1;
     }
   } else {
-    // JeÄąâ€şli filtry wyÄąâ€šĂ„â€¦czone, wyczyÄąâ€şĂ„â€ˇ wszystkie filtry
+    // JeĂ„Ä…Ă˘â‚¬Ĺźli filtry wyĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czone, wyczyĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ wszystkie filtry
     sendClusterCommand("set/nofilter");
   }
   
-  Serial.println("[CLUSTER] Komendy konfiguracyjne wysÄąâ€šane");
+  Serial.println("[CLUSTER] Komendy konfiguracyjne wysĂ„Ä…Ă˘â‚¬Ĺˇane");
 }
 
 void handleTelnetData() {
@@ -14408,7 +14580,7 @@ void handleTelnetData() {
   
   if (!telnetConnected || !telnetClient.connected()) {
     if (telnetConnected) {
-      LOGV_PRINTLN("[TELNET] PoÄąâ€šĂ„â€¦czenie zerwane - reset flagÄ‚łw");
+      LOGV_PRINTLN("[TELNET] PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenie zerwane - reset flagĂ„â€šĹ‚w");
     }
     telnetConnected = false;
     clusterLoginSent = false;
@@ -14416,10 +14588,10 @@ void handleTelnetData() {
     return;
   }
   
-  // Print co 1000 wywoÄąâ€šaÄąâ€ž (dla debugowania)
+  // Print co 1000 wywoĂ„Ä…Ă˘â‚¬ĹˇaĂ„Ä…Ă˘â‚¬Ĺľ (dla debugowania)
   unsigned long now = millis();
   if (now - lastTelnetPrint > 30000) { // Co 30 sekund
-    LOGV_PRINT("[TELNET] handleTelnetData wywoÄąâ€šane ");
+    LOGV_PRINT("[TELNET] handleTelnetData wywoĂ„Ä…Ă˘â‚¬Ĺˇane ");
     LOGV_PRINT(telnetCallCount);
     LOGV_PRINT(" razy, available=");
     LOGV_PRINTLN(telnetClient.available());
@@ -14427,8 +14599,8 @@ void handleTelnetData() {
     telnetCallCount = 0;
   }
   
-  // Nie blokuj pĂ„â„˘tli gÄąâ€šÄ‚łwnej: w jednej iteracji czytaj maksymalnie N bajtÄ‚łw
-  // i dawaj yield, ÄąÄ˝eby nie wpaÄąâ€şĂ„â€ˇ w WDT przy duÄąÄ˝ym strumieniu.
+  // Nie blokuj pÄ‚â€žĂ˘â€žËtli gĂ„Ä…Ă˘â‚¬ĹˇĂ„â€šĹ‚wnej: w jednej iteracji czytaj maksymalnie N bajtĂ„â€šĹ‚w
+  // i dawaj yield, Ă„Ä…Ă„Ëťeby nie wpaĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ w WDT przy duĂ„Ä…Ă„Ëťym strumieniu.
   int processed = 0;
   const int maxPerLoop = 256;
   int availableBefore = telnetClient.available();
@@ -14439,7 +14611,7 @@ void handleTelnetData() {
     lastTelnetRxMs = millis();
     if ((processed % 64) == 0) {
       yield();
-      // obsÄąâ€šuÄąÄ˝ WWW nawet jeÄąâ€şli telnet zalewa danymi
+      // obsĂ„Ä…Ă˘â‚¬ĹˇuĂ„Ä…Ă„Ëť WWW nawet jeĂ„Ä…Ă˘â‚¬Ĺźli telnet zalewa danymi
       if (server != nullptr) {
         server->handleClient();
       }
@@ -14447,7 +14619,7 @@ void handleTelnetData() {
     
     if (c == '\n' || c == '\r') {
       if (telnetBuffer.length() > 0) {
-        // Nie parsuj tu (to bywa kosztowne). PrzekaÄąÄ˝ liniĂ„â„˘ do przetworzenia w loop().
+        // Nie parsuj tu (to bywa kosztowne). PrzekaĂ„Ä…Ă„Ëť liniÄ‚â€žĂ˘â€žË do przetworzenia w loop().
         if (pendingTelnetLine.length() == 0) {
           pendingTelnetLine = telnetBuffer;
         } else {
@@ -14458,7 +14630,7 @@ void handleTelnetData() {
     } else if (c >= 32 && c < 127) {
       telnetBuffer += c;
       if (telnetBuffer.length() > 512) {
-        telnetBuffer = ""; // Ochrona przed przepeÄąâ€šnieniem
+        telnetBuffer = ""; // Ochrona przed przepeĂ„Ä…Ă˘â‚¬Ĺˇnieniem
       }
     }
   }
@@ -14466,22 +14638,22 @@ void handleTelnetData() {
   if (processed > 0) {
     LOGV_PRINT("[TELNET] Przetworzono ");
     LOGV_PRINT(processed);
-    LOGV_PRINT(" bajtÄ‚łw (byÄąâ€šo ");
+    LOGV_PRINT(" bajtĂ„â€šĹ‚w (byĂ„Ä…Ă˘â‚¬Ĺˇo ");
     LOGV_PRINT(availableBefore);
-    LOGV_PRINT(", zostaÄąâ€šo ");
+    LOGV_PRINT(", zostaĂ„Ä…Ă˘â‚¬Ĺˇo ");
     LOGV_PRINT(telnetClient.available());
     LOGV_PRINTLN(")");
   }
   
   if (telnetClient.available() && processed >= maxPerLoop) {
-    LOGV_PRINTLN("[TELNET] WARNING: ZostaÄąâ€šo wiĂ„â„˘cej danych - nastĂ„â„˘pna iteracja");
-    // Zostaw resztĂ„â„˘ na nastĂ„â„˘pnĂ„â€¦ iteracjĂ„â„˘ loop()
+    LOGV_PRINTLN("[TELNET] WARNING: ZostaĂ„Ä…Ă˘â‚¬Ĺˇo wiÄ‚â€žĂ˘â€žËcej danych - nastÄ‚â€žĂ˘â€žËpna iteracja");
+    // Zostaw resztÄ‚â€žĂ˘â€žË na nastÄ‚â€žĂ˘â€žËpnÄ‚â€žĂ˘â‚¬Â¦ iteracjÄ‚â€žĂ˘â€žË loop()
     yield();
   }
   
-  // SprawdÄąĹź czy poÄąâ€šĂ„â€¦czenie nadal dziaÄąâ€ša
+  // SprawdĂ„Ä…ÄąĹş czy poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenie nadal dziaĂ„Ä…Ă˘â‚¬Ĺˇa
   if (!telnetClient.connected()) {
-    LOGV_PRINTLN("[TELNET] RozÄąâ€šĂ„â€¦czono z DX Cluster");
+    LOGV_PRINTLN("[TELNET] RozĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czono z DX Cluster");
     telnetConnected = false;
     clusterLoginSent = false;
     clusterLoginScheduled = false;
@@ -14491,7 +14663,7 @@ void handleTelnetData() {
 void handlePotaTelnetData() {
   if (!potaTelnetConnected || !potaTelnetClient.connected()) {
     if (potaTelnetConnected) {
-      LOGV_PRINTLN("[POTA] PoÄąâ€šĂ„â€¦czenie zerwane - reset flag");
+      LOGV_PRINTLN("[POTA] PoĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenie zerwane - reset flag");
     }
     potaTelnetConnected = false;
     potaLoginSent = false;
@@ -14530,7 +14702,7 @@ void handlePotaTelnetData() {
   }
 
   if (!potaTelnetClient.connected()) {
-    LOGV_PRINTLN("[POTA] RozÄąâ€šĂ„â€¦czono z POTA Cluster");
+    LOGV_PRINTLN("[POTA] RozĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czono z POTA Cluster");
     potaTelnetConnected = false;
     potaLoginSent = false;
     potaLoginScheduled = false;
@@ -14541,7 +14713,7 @@ void handlePotaTelnetData() {
 
 void updateNTPTime() {
   unsigned long now = millis();
-  if (lastNTPUpdate != 0 && (now - lastNTPUpdate < 3600000)) { // Aktualizuj co godzinĂ„â„˘
+  if (lastNTPUpdate != 0 && (now - lastNTPUpdate < 3600000)) { // Aktualizuj co godzinÄ‚â€žĂ˘â€žË
     return;
   }
   
@@ -14557,9 +14729,9 @@ void updateNTPTime() {
   if (getLocalTime(&timeinfo)) {
     Serial.println("[NTP] Czas NTP zsynchronizowany");
   } else {
-    Serial.println("[NTP] BÄąÂĂ„â€žD: Nie udaÄąâ€šo siĂ„â„˘ pobraĂ„â€ˇ czasu NTP");
+    Serial.println("[NTP] BĂ„Ä…Ă‚ÂÄ‚â€žĂ˘â‚¬ĹľD: Nie udaĂ„Ä…Ă˘â‚¬Ĺˇo siÄ‚â€žĂ˘â€žË pobraÄ‚â€žĂ˘â‚¬Ë‡ czasu NTP");
   }
-  checkScreenSaverTimeout(); // Dodanie wywoÄąâ€šania funkcji
+  checkScreenSaverTimeout(); // Dodanie wywoĂ„Ä…Ă˘â‚¬Ĺˇania funkcji
 }
 
 // ========== WYGASZACZ EKRANU (Matrix) ==========
@@ -14567,7 +14739,7 @@ void updateNTPTime() {
 void resetScreenSaverActivity() {
   screenSaverLastActivityMs = millis();
   if (screenSaverActive) {
-    // WyÄąâ€šĂ„â€¦cz wygaszacz i wrÄ‚łĂ„â€ˇ do poprzedniego ekranu
+    // WyĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦cz wygaszacz i wrĂ„â€šĹ‚Ä‚â€žĂ˘â‚¬Ë‡ do poprzedniego ekranu
     screenSaverActive = false;
     if (screenSaverPrevScreen != SCREEN_OFF) {
       drawScreen(screenSaverPrevScreen);
@@ -14582,10 +14754,10 @@ void checkScreenSaverTimeout() {
   unsigned long now = millis();
   unsigned long timeoutMs = (unsigned long)screenSaverTimeoutMin * 60000UL; // minuty na ms
   if (now - screenSaverLastActivityMs >= timeoutMs) {
-    // Włącz wygaszacz z poruszającym się zegarem
+    // WĹ‚Ä…cz wygaszacz z poruszajÄ…cym siÄ™ zegarem
     screenSaverActive = true;
     screenSaverPrevScreen = currentScreen;
-    // Wyczyść ekran i zresetuj pozycję zegara
+    // WyczyĹ›Ä‡ ekran i zresetuj pozycjÄ™ zegara
     tft.fillScreen(TFT_BLACK);
     bounceClockX = 240;
     bounceClockY = 160;
@@ -14624,23 +14796,23 @@ void drawQrzPopup() {
   const int popupX = (480 - popupW) / 2;
   const int popupY = (320 - popupH) / 2;
 
-  // Tło popupu
+  // TĹ‚o popupu
   tft.fillRect(popupX, popupY, popupW, popupH, TFT_DARKGREY);
   tft.drawRect(popupX, popupY, popupW, popupH, TFT_WHITE);
   tft.drawRect(popupX + 2, popupY + 2, popupW - 4, popupH - 4, TFT_RADIO_ORANGE);
 
-  // Nagłówek z callsign i imieniem
+  // NagĹ‚Ăłwek z callsign i imieniem
   tft.fillRect(popupX + 4, popupY + 4, popupW - 8, 30, TFT_RADIO_ORANGE);
   tft.setTextColor(TFT_BLACK);
   tft.setTextSize(2);
   tft.setCursor(popupX + 10, popupY + 10);
   tft.print(qrzPopupCallsign);
   
-  // Imię i nazwisko w nagłówku (jeśli dostępne)
+  // ImiÄ™ i nazwisko w nagĹ‚Ăłwku (jeĹ›li dostÄ™pne)
   if (qrzPopupName.length() > 0) {
     tft.setTextSize(1);
     String nameText = " - " + qrzPopupName;
-    // Oblicz pozycję za callsign
+    // Oblicz pozycjÄ™ za callsign
     int nameX = popupX + 10 + (qrzPopupCallsign.length() * 12);
     tft.setCursor(nameX, popupY + 14);
     tft.print(nameText);
@@ -14701,7 +14873,7 @@ void drawQrzPopup() {
   const int closeY = popupY + popupH - closeH - 15;
   drawFilterTile(closeX, closeY, closeW, closeH, "CLOSE", false);
 
-  // Mapa świata w prawym górnym rogu popupu
+  // Mapa Ĺ›wiata w prawym gĂłrnym rogu popupu
   if (qrzPopupHasLatLon) {
     const int mapW = 140;
     const int mapH = 80;
@@ -14713,7 +14885,7 @@ void drawQrzPopup() {
     Serial.print(" lon=");
     Serial.println(qrzPopupLon, 6);
     
-    // Wyświetl plik mapa.bmp z folderu data
+    // WyĹ›wietl plik mapa.bmp z folderu data
     bool mapLoaded = false;
     if (littleFsReady && LittleFS.exists("/mapa.bmp")) {
       Serial.println("[QRZ MAP] Found /mapa.bmp, attempting to load...");
@@ -14727,13 +14899,13 @@ void drawQrzPopup() {
       Serial.println("[QRZ MAP] Using fallback drawing");
     }
 
-    // Jeśli nie ma pliku BMP, użyj fallback (rysowanie)
+    // JeĹ›li nie ma pliku BMP, uĹĽyj fallback (rysowanie)
     if (!mapLoaded) {
-      // Tło mapy
+      // TĹ‚o mapy
       tft.fillRect(mapX, mapY, mapW, mapH, 0x4208); // Ciemny szary
       tft.drawRect(mapX, mapY, mapW, mapH, TFT_LIGHTGREY);
       
-      // Uproszczony kontur mapy świata (linie kontynentów)
+      // Uproszczony kontur mapy Ĺ›wiata (linie kontynentĂłw)
       tft.drawLine(mapX + 20, mapY + 25, mapX + 50, mapY + 20, TFT_LIGHTGREY);
       tft.drawLine(mapX + 50, mapY + 20, mapX + 60, mapY + 40, TFT_LIGHTGREY);
       tft.drawLine(mapX + 20, mapY + 25, mapX + 25, mapY + 55, TFT_LIGHTGREY);
@@ -14753,9 +14925,9 @@ void drawQrzPopup() {
       }
     }
     
-    // Oblicz pozycję na mapie (prosta projekcja equirectangular)
+    // Oblicz pozycjÄ™ na mapie (prosta projekcja equirectangular)
     // Longitude: -180 do 180 -> 0 do mapW
-    // Latitude: -90 do 90 -> mapH do 0 (odwrócone)
+    // Latitude: -90 do 90 -> mapH do 0 (odwrĂłcone)
     int dotX = mapX + (int)((qrzPopupLon + 180.0) * mapW / 360.0);
     int dotY = mapY + mapH - (int)((qrzPopupLat + 90.0) * mapH / 180.0);
     
@@ -14775,13 +14947,13 @@ void drawQrzPopup() {
     Serial.print(" dotY=");
     Serial.println(dotY);
     
-    // Rysuj punkt stacji (czerwona kropka z białą obwódką)
+    // Rysuj punkt stacji (czerwona kropka z biaĹ‚Ä… obwĂłdkÄ…)
     Serial.println("[QRZ MAP] Drawing station dot");
     tft.fillCircle(dotX, dotY, 5, TFT_RED);
     tft.drawCircle(dotX, dotY, 5, TFT_WHITE);
     tft.drawCircle(dotX, dotY, 6, TFT_BLACK);
     
-    // Mała etykieta z lokalizatorem pod mapą
+    // MaĹ‚a etykieta z lokalizatorem pod mapÄ…
     tft.setTextSize(1);
     tft.setTextColor(TFT_YELLOW);
     tft.setCursor(mapX, mapY + mapH + 3);
@@ -14818,7 +14990,7 @@ void openQrzPopup(const String &callsign) {
   qrzPopupCallsign = callsign;
   qrzPopupCallsign.toUpperCase();
 
-  // Sprawdź cache najpierw
+  // SprawdĹş cache najpierw
   String grid, country, name, email, qth;
   double lat, lon;
   bool hasLatLon;
@@ -14837,7 +15009,7 @@ void openQrzPopup(const String &callsign) {
     qrzPopupLat = lat;
     qrzPopupLon = lon;
     qrzPopupHasLatLon = hasLatLon;
-    // Oblicz odległość jeśli mamy współrzędne
+    // Oblicz odlegĹ‚oĹ›Ä‡ jeĹ›li mamy wspĂłĹ‚rzÄ™dne
     if (hasLatLon && userLatLonValid) {
       qrzPopupDistance = calculateDistance(userLat, userLon, lat, lon);
     } else if (hasLatLon && userLocator.length() >= 4) {
@@ -14857,7 +15029,7 @@ void openQrzPopup(const String &callsign) {
       qrzPopupName = name;
       qrzPopupEmail = email;
       qrzPopupQth = qth;
-      // Oblicz odległość jeśli mamy współrzędne
+      // Oblicz odlegĹ‚oĹ›Ä‡ jeĹ›li mamy wspĂłĹ‚rzÄ™dne
       if (hasLatLon && userLatLonValid) {
         qrzPopupDistance = calculateDistance(userLat, userLon, lat, lon);
       } else if (hasLatLon && userLocator.length() >= 4) {
@@ -14872,7 +15044,7 @@ void openQrzPopup(const String &callsign) {
     return;
   }
 
-  // Jeśli nie ma w cache, pokaż popup z "Loading..." i pobierz w tle
+  // JeĹ›li nie ma w cache, pokaĹĽ popup z "Loading..." i pobierz w tle
   qrzPopupGrid = "";
   qrzPopupCountry = "Fetching...";
   qrzPopupName = "";
@@ -14899,7 +15071,7 @@ void openQrzPopup(const String &callsign) {
     qrzPopupLat = lat;
     qrzPopupLon = lon;
     qrzPopupHasLatLon = hasLatLon;
-    // Oblicz odległość jeśli mamy współrzędne
+    // Oblicz odlegĹ‚oĹ›Ä‡ jeĹ›li mamy wspĂłĹ‚rzÄ™dne
     if (hasLatLon && userLatLonValid) {
       qrzPopupDistance = calculateDistance(userLat, userLon, lat, lon);
     } else if (hasLatLon && userLocator.length() >= 4) {
@@ -14912,7 +15084,7 @@ void openQrzPopup(const String &callsign) {
     qrzPopupFetchedAt = millis();
     drawQrzPopup();
   } else {
-    // QRZ.com nie zadziałał - spróbuj Callook.info (darmowe API, tylko USA)
+    // QRZ.com nie zadziaĹ‚aĹ‚ - sprĂłbuj Callook.info (darmowe API, tylko USA)
     Serial.println("[QRZ POPUP] QRZ.com failed, trying Callook.info...");
     if (fetchCallookCallsignInfo(qrzPopupCallsign, grid, country, name, email, qth, lat, lon, hasLatLon)) {
     Serial.print("[QRZ POPUP] API fetch - hasLatLon=");
@@ -14929,7 +15101,7 @@ void openQrzPopup(const String &callsign) {
     qrzPopupLat = lat;
     qrzPopupLon = lon;
     qrzPopupHasLatLon = hasLatLon;
-    // Oblicz odległość jeśli mamy współrzędne
+    // Oblicz odlegĹ‚oĹ›Ä‡ jeĹ›li mamy wspĂłĹ‚rzÄ™dne
     if (hasLatLon && userLatLonValid) {
       qrzPopupDistance = calculateDistance(userLat, userLon, lat, lon);
     } else if (hasLatLon && userLocator.length() >= 4) {
@@ -14942,7 +15114,7 @@ void openQrzPopup(const String &callsign) {
     qrzPopupFetchedAt = millis();
     drawQrzPopup();
   } else {
-    // Błąd pobierania z Callook - spróbuj HamQTH (globalne API)
+    // BĹ‚Ä…d pobierania z Callook - sprĂłbuj HamQTH (globalne API)
     Serial.println("[QRZ POPUP] Callook failed, trying HamQTH...");
     
     if (fetchHamQthCallsignInfo(qrzPopupCallsign, grid, country, name, email, qth, lat, lon, hasLatLon)) {
@@ -14960,7 +15132,7 @@ void openQrzPopup(const String &callsign) {
       qrzPopupLat = lat;
       qrzPopupLon = lon;
       qrzPopupHasLatLon = hasLatLon;
-      // Oblicz odległość jeśli mamy współrzędne
+      // Oblicz odlegĹ‚oĹ›Ä‡ jeĹ›li mamy wspĂłĹ‚rzÄ™dne
       if (hasLatLon && userLatLonValid) {
         qrzPopupDistance = calculateDistance(userLat, userLon, lat, lon);
       } else if (hasLatLon && userLocator.length() >= 4) {
@@ -14975,7 +15147,7 @@ void openQrzPopup(const String &callsign) {
       return;
     }
     
-    // HamQTH też nie zadziałał - spróbuj znaleźć lokalizator w spotach DX
+    // HamQTH teĹĽ nie zadziaĹ‚aĹ‚ - sprĂłbuj znaleĹşÄ‡ lokalizator w spotach DX
     String foundLocator = "";
     Serial.print("[QRZ POPUP] Both APIs failed, searching spots for: ");
     Serial.println(qrzPopupCallsign);
@@ -15015,7 +15187,7 @@ void openQrzPopup(const String &callsign) {
     }
     
     if (foundLocator.length() >= 4) {
-      // Znaleziono lokalizator - użyj go do pokazania na mapie
+      // Znaleziono lokalizator - uĹĽyj go do pokazania na mapie
       double spotLat, spotLon;
       locatorToLatLon(foundLocator, spotLat, spotLon);
       qrzPopupGrid = foundLocator;
@@ -15032,7 +15204,7 @@ void openQrzPopup(const String &callsign) {
       Serial.println(spotLon, 6);
       drawQrzPopup();
     } else {
-      // Brak lokalizatora w spotach - sprawdź czy mamy w cache QRZ
+      // Brak lokalizatora w spotach - sprawdĹş czy mamy w cache QRZ
       Serial.println("[QRZ POPUP] No spot locator found, checking QRZ cache...");
       
       String cacheGrid, cacheCountry, cacheName, cacheEmail, cacheQth;
@@ -15049,7 +15221,7 @@ void openQrzPopup(const String &callsign) {
         Serial.print(" hasLatLon: ");
         Serial.println(cacheHasLatLon ? "true" : "false");
         
-        // Mamy dane w cache - użyj ich
+        // Mamy dane w cache - uĹĽyj ich
         if (cacheGrid.length() >= 4) {
           double spotLat, spotLon;
           locatorToLatLon(cacheGrid, spotLat, spotLon);
@@ -15073,7 +15245,7 @@ void openQrzPopup(const String &callsign) {
           Serial.print("[QRZ POPUP] Using lat/lon from QRZ cache");
           drawQrzPopup();
         } else {
-          // Brak lokalizatora - uĹĽyj przybliĹĽonej lokalizacji z prefiksu
+          // Brak lokalizatora - uÄąÄ˝yj przybliÄąÄ˝onej lokalizacji z prefiksu
           String approxGrid = getApproximateGridFromCallsign(qrzPopupCallsign);
           if (approxGrid.length() >= 4) {
             double approxLat, approxLon;
@@ -15098,7 +15270,7 @@ void openQrzPopup(const String &callsign) {
           }
         }
       } else {
-        // Brak lokalizatora - uĹĽyj przybliĹĽonej lokalizacji z prefiksu
+        // Brak lokalizatora - uÄąÄ˝yj przybliÄąÄ˝onej lokalizacji z prefiksu
         String approxGrid = getApproximateGridFromCallsign(qrzPopupCallsign);
         if (approxGrid.length() >= 4) {
           double approxLat, approxLon;
@@ -15142,7 +15314,7 @@ void drawScreenSaverMenu() {
   const int startX = (480 - (2 * tileW + gap)) / 2;
   const int tileY = 60;
 
-  // Włącz/Wyłącz
+  // WĹ‚Ä…cz/WyĹ‚Ä…cz
   drawFilterTile(startX, tileY, tileW, tileH, "WLACZ", screenSaverEnabled);
   drawFilterTile(startX + tileW + gap, tileY, tileW, tileH, "WYLACZ", !screenSaverEnabled);
 
@@ -15195,7 +15367,7 @@ void handleScreenSaverMenuTouch(uint16_t x, uint16_t y) {
   const int startX = (480 - (2 * tileW + gap)) / 2;
   const int tileY = 60;
 
-  // Włącz/Wyłącz
+  // WĹ‚Ä…cz/WyĹ‚Ä…cz
   if (isPointInRect(x, y, startX, tileY, tileW, tileH)) {
     setScreenSaverEnabled(true);
     drawScreenSaverMenu();
@@ -15213,7 +15385,7 @@ void handleScreenSaverMenuTouch(uint16_t x, uint16_t y) {
   const int typeX = 300;
   const int typeY = 115;
   if (isPointInRect(x, y, typeX, typeY, typeTileW, typeTileH)) {
-    // Zmień typ na następny
+    // ZmieĹ„ typ na nastÄ™pny
     int currentType = (int)screenSaverType;
     currentType = (currentType + 1) % 3;  // Cykl: 0->1->2->0
     screenSaverType = (ScreenSaverType)currentType;
@@ -15267,19 +15439,19 @@ void handleScreenSaverMenuTouch(uint16_t x, uint16_t y) {
   }
 }
 
-// ========== UŚPIENIE EKRANU ==========
+// ========== UĹšPIENIE EKRANU ==========
 
 void drawScreenSleepMenu() {
   tft.fillScreen(TFT_BLACK);
 
-  // Nagłówek
+  // NagĹ‚Ăłwek
   tft.fillRect(0, 0, 480, 28, menuThemeColor);
   tft.setTextColor(TFT_BLACK);
   tft.setTextSize(2);
   tft.setCursor(10, 6);
   tft.print("USPIENIE EKRANU");
 
-  // Stan: Włączony/Wyłączony
+  // Stan: WĹ‚Ä…czony/WyĹ‚Ä…czony
   const int tileW = 100;
   const int tileH = 40;
   const int gap = 10;
@@ -15335,13 +15507,13 @@ void handleScreenSleepMenuTouch(uint16_t x, uint16_t y) {
   const int startX = (480 - (2 * tileW + gap)) / 2;
   const int tileY = 60;
 
-  // Włącz
+  // WĹ‚Ä…cz
   if (isPointInRect(x, y, startX, tileY, tileW, tileH)) {
     screenSleepEnabled = true;
     drawScreenSleepMenu();
     return;
   }
-  // Wyłącz
+  // WyĹ‚Ä…cz
   if (isPointInRect(x, y, startX + tileW + gap, tileY, tileW, tileH)) {
     screenSleepEnabled = false;
     drawScreenSleepMenu();
@@ -15403,10 +15575,10 @@ void enterScreenSleep() {
   screenSleepActive = true;
   screenSleepPrevScreen = currentScreen;
 
-  // Wyłącz podświetlenie
+  // WyĹ‚Ä…cz podĹ›wietlenie
   ledcWrite(TFT_BL_PIN, 0);
 
-  // Wyczyść ekran
+  // WyczyĹ›Ä‡ ekran
   tft.fillScreen(TFT_BLACK);
 }
 
@@ -15416,10 +15588,10 @@ void wakeUpFromSleep() {
   screenSleepActive = false;
   screenSleepLastActivityMs = millis();
 
-  // Przywróć podświetlenie
+  // PrzywrĂłÄ‡ podĹ›wietlenie
   setBacklightPercent(backlightPercent);
 
-  // Przywróć poprzedni ekran
+  // PrzywrĂłÄ‡ poprzedni ekran
   drawScreen(screenSleepPrevScreen);
 }
 
@@ -15442,7 +15614,7 @@ void loadPreferences() {
   preferences->begin("dxcluster", false);
   yield();
 
-  // Kolejność ekranów
+  // KolejnoĹ›Ä‡ ekranĂłw
   loadDefaultScreenOrder();
   size_t bytesRead = preferences->getBytes("screen_order", screenOrder, sizeof(screenOrder));
   if (bytesRead != sizeof(screenOrder)) {
@@ -15500,7 +15672,7 @@ void loadPreferences() {
   userLatLonValid = preferences->getBool("user_ll_ok", false);
   yield();
   
-  // Jeśli nie mamy ważnych współrzędnych ale mamy locator, przelicz z locatora
+  // JeĹ›li nie mamy waĹĽnych wspĂłĹ‚rzÄ™dnych ale mamy locator, przelicz z locatora
   if (!userLatLonValid && userLocator.length() >= 4) {
     updateUserLatLonFromLocator();
     // Nie zapisujemy do preferencji tutaj - to tylko odczyt
@@ -15510,6 +15682,8 @@ void loadPreferences() {
   qrzPassword = preferences->getString("qrz_pass", "");
   yield();
   weatherApiKey = preferences->getString("weather_key", "");
+  yield();
+  n2yoApiKey = preferences->getString("n2yo_key", "");
   yield();
   openWebRxUrl = preferences->getString("openwebrx_url", DEFAULT_OPENWEBRX_URL);
   yield();
@@ -15560,7 +15734,7 @@ void loadPreferences() {
   pskCustomUrl = preferences->getString("psk_url", "");
   // HTTP Monitoring
   pskMonitorCallsign = preferences->getString("psk_monitor", "");
-  pskReportDays = preferences->getInt("psk_report_days", 0);
+  pskReportDays = preferences->getInt("psk_report_days", 3);
   if (pskReportDays < 0) pskReportDays = 0;
   if (pskReportDays > 62) pskReportDays = 62;
   pskAutoRefreshMinutes = preferences->getInt("psk_autorefresh", 5);
@@ -15590,7 +15764,7 @@ void loadPreferences() {
   if (savedType < 0 || savedType > 2) savedType = 0;
   screenSaverType = (ScreenSaverType)savedType;
   
-  // Konfiguracja filtrów CC-Cluster
+  // Konfiguracja filtrĂłw CC-Cluster
   clusterNoAnnouncements = preferences->getBool("cluster_noann", true);
   yield();
   clusterNoWWV = preferences->getBool("cluster_nowwv", true);
@@ -15635,7 +15809,7 @@ void loadPreferences() {
   // Ograniczenie promienia do 1-50 km
   if (aprsFilterRadius < 1) aprsFilterRadius = 1;
   if (aprsFilterRadius > 50) aprsFilterRadius = 50;
-  // Uwaga: APRS uÄąÄ˝ywa wspÄ‚łÄąâ€šrzĂ„â„˘dnych z sekcji "Moja Stacja" (userLat, userLon) - nie ma osobnych pÄ‚łl
+  // Uwaga: APRS uĂ„Ä…Ă„Ëťywa wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych z sekcji "Moja Stacja" (userLat, userLon) - nie ma osobnych pĂ„â€šĹ‚l
 
   if (!userLatLonValid && userLocator.length() >= 4) {
     updateUserLatLonFromLocator();
@@ -15646,7 +15820,7 @@ void loadPreferences() {
   
   preferences->end();
 
-  // Zastosuj inwersję kolorów po wczytaniu ustawień
+  // Zastosuj inwersjÄ™ kolorĂłw po wczytaniu ustawieĹ„
   if (tftInitialized) {
     applyTftInversion();
   }
@@ -15685,6 +15859,7 @@ void savePreferences() {
   preferences->putString("qrz_user", qrzUsername);
   preferences->putString("qrz_pass", qrzPassword);
   preferences->putString("weather_key", weatherApiKey);
+  preferences->putString("n2yo_key", n2yoApiKey);
   preferences->putString("openwebrx_url", openWebRxUrl);
   preferences->putInt("tft_backlight", backlightPercent);
   preferences->putBool("tft_inv", sanitizeTftInvertSetting(tftInvertColors));
@@ -15752,9 +15927,9 @@ void savePreferences() {
   if (radiusToSave < 1) radiusToSave = 1;
   if (radiusToSave > 50) radiusToSave = 50;
   preferences->putInt("aprs_radius", radiusToSave);
-  // Uwaga: APRS używa współrzędnych z sekcji "Moja Stacja" (userLat, userLon) - nie zapisujemy osobnych pól
+  // Uwaga: APRS uĹĽywa wspĂłĹ‚rzÄ™dnych z sekcji "Moja Stacja" (userLat, userLon) - nie zapisujemy osobnych pĂłl
   
-  // Konfiguracja filtrów CC-Cluster
+  // Konfiguracja filtrĂłw CC-Cluster
   preferences->putBool("cluster_noann", clusterNoAnnouncements);
   preferences->putBool("cluster_nowwv", clusterNoWWV);
   preferences->putBool("cluster_nowcy", clusterNoWCY);
@@ -15771,10 +15946,10 @@ void savePreferences() {
 String getMainHTML();
 String getConfigHTML();
 
-// Zmienna przechowująca czas startu systemu (do obliczania uptime)
+// Zmienna przechowujÄ…ca czas startu systemu (do obliczania uptime)
 static unsigned long bootTimeMs = 0;
 
-// Funkcja formatująca uptime w czytelny sposób (dni, godziny, minuty, sekundy)
+// Funkcja formatujÄ…ca uptime w czytelny sposĂłb (dni, godziny, minuty, sekundy)
 String formatUptime(unsigned long ms) {
   unsigned long totalSeconds = ms / 1000;
   unsigned long days = totalSeconds / 86400;
@@ -15799,40 +15974,40 @@ String formatUptime(unsigned long ms) {
 String getManualPL() {
   return String(
     "ESP32-HAM-CLOCK v1.3 (13.04.2026)\n"
-    "Autor: Konrad Wisniewski SP3KON (z użyciem AI)\n"
+    "Autor: Konrad Wisniewski SP3KON (z uĹĽyciem AI)\n"
     "Kontakt: sp3kon@gmail.com\n\n"
-    "Wgrywanie przez przeglądarkę (ESP Web Tools)\n"
+    "Wgrywanie przez przeglÄ…darkÄ™ (ESP Web Tools)\n"
     "- Strona: https://jason2866.github.io/WebSerial_ESPTool/\n"
     "- Wymagany Chrome lub Edge (WebSerial).\n"
-    "- Pliki znajdują się w folderze: build\\esp32.esp32.esp32\\\n"
+    "- Pliki znajdujÄ… siÄ™ w folderze: build\\esp32.esp32.esp32\\\n"
     "- Dotyczy: CYD ESP32-2432S028R (4MB flash, schemat Default 4MB with spiffs).\n\n"
     "Wgrywanie:\n"
     "1. bootloader.bin    0x1000\n"
     "2. partitions.bin    0x8000\n"
     "3. firmware.bin      0x10000\n"
     "4. littlefs.bin      0x290000\n\n"
-    "Po starcie urządzenie tworzy AP: SSID ESP32-HAM-CLOCK, hasło 1234567890\n"
-    "(jeśli brak konfiguracji WiFi).\n\n"
+    "Po starcie urzÄ…dzenie tworzy AP: SSID ESP32-HAM-CLOCK, hasĹ‚o 1234567890\n"
+    "(jeĹ›li brak konfiguracji WiFi).\n\n"
     "Konfiguracja WWW:\n"
-    "- Wejdź na /config\n"
-    "- WiFi: dwa zestawy SSID/hasło (podstawowe i zapasowe)\n"
-    "- DX Cluster: host/port + opcje filtrów\n"
+    "- WejdĹş na /config\n"
+    "- WiFi: dwa zestawy SSID/hasĹ‚o (podstawowe i zapasowe)\n"
+    "- DX Cluster: host/port + opcje filtrĂłw\n"
     "- POTA: External POTA API Link\n"
-    "- HAMALERT: telnet host, port, login i hasło\n"
+    "- HAMALERT: telnet host, port, login i hasĹ‚o\n"
     "- QRZ.com: username i password\n"
     "- OpenWeather: klucz API\n"
-    "- TFT: jasność, język, rozmiar tabel, AUTO-SWITCH\n\n"
-    "Więcej informacji: https://github.com/SP3KON/ESP32-HAM-CLOCK\n"
+    "- TFT: jasnoĹ›Ä‡, jÄ™zyk, rozmiar tabel, AUTO-SWITCH\n\n"
+    "WiÄ™cej informacji: https://github.com/SP3KON/ESP32-HAM-CLOCK\n"
   );
 }
 
 void setupWebServer() {
-  // UtwÄ‚łrz serwer jeÄąâ€şli jeszcze nie istnieje
+  // UtwĂ„â€šĹ‚rz serwer jeĂ„Ä…Ă˘â‚¬Ĺźli jeszcze nie istnieje
   if (server == nullptr) {
     server = new WebServer(80);
   }
   
-  // Strona główna - najpierw próbuje z LittleFS, potem wbudowany HTML
+  // Strona glowna - najpierw LittleFS jesli istnieje, potem wbudowany HTML
   server->on("/", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
@@ -15843,7 +16018,7 @@ void setupWebServer() {
     }
   });
 
-  // Strona główna (alias /index.html) - najpierw LittleFS, potem wbudowany HTML
+  // Strona glowna (alias /index.html)
   server->on("/index.html", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/index.html")) {
       File f = LittleFS.open("/index.html", "r");
@@ -15854,14 +16029,10 @@ void setupWebServer() {
     }
   });
 
-  // Strona gÄąâ€šÄ‚łwna (EN)
+  // Strona glowna (EN) - jesli LittleFS ma indexEN.html
   server->on("/indexEN.html", HTTP_GET, []() {
     if (littleFsReady && LittleFS.exists("/indexEN.html")) {
       File f = LittleFS.open("/indexEN.html", "r");
-      server->streamFile(f, "text/html; charset=utf-8");
-      f.close();
-    } else if (littleFsReady && LittleFS.exists("/index.html")) {
-      File f = LittleFS.open("/index.html", "r");
       server->streamFile(f, "text/html; charset=utf-8");
       f.close();
     } else {
@@ -15869,7 +16040,7 @@ void setupWebServer() {
     }
   });
 
-  // Instrukcja (PL) - przekierowanie na nową wersję HTML
+  // Instrukcja (PL) - przekierowanie na nowÄ… wersjÄ™ HTML
   server->on("/instrukcja.txt", HTTP_GET, []() {
     server->send(301, "text/html", "<html><head><meta http-equiv='refresh' content='0; url=/instruction'></head></html>");
   });
@@ -15885,7 +16056,7 @@ void setupWebServer() {
     }
   });
 
-  // Instrukcja montażu i wgrania (HTML)
+  // Instrukcja montaĹĽu i wgrania (HTML)
   server->on("/instruction", HTTP_GET, []() {
     String html = "<!DOCTYPE html><html><head>";
     html += "<meta charset='UTF-8'>";
@@ -15911,83 +16082,83 @@ void setupWebServer() {
     html += ".back-btn:hover{background:#0055aa;text-decoration:none;}";
     html += "</style></head><body>";
 
-    html += "<h1>📻 ESP32-HAM-CLOCK - Instrukcja Montażu i Wgrania</h1>";
-    html += "<a href='/' class='back-btn'>← Powrót do głównej</a>";
+    html += "<h1>đź“» ESP32-HAM-CLOCK - Instrukcja MontaĹĽu i Wgrania</h1>";
+    html += "<a href='/' class='back-btn'>â† PowrĂłt do gĹ‚Ăłwnej</a>";
 
-    // Sekcja montażu
-    html += "<h2>🔧 Montaż - Schemat połączeń</h2>";
+    // Sekcja montaĹĽu
+    html += "<h2>đź”§ MontaĹĽ - Schemat poĹ‚Ä…czeĹ„</h2>";
 
     html += "<h3>Wymagane komponenty</h3>";
     html += "<table>";
     html += "<tr><th>Element</th><th>Opis</th><th>Alternatywa</th></tr>";
-    html += "<tr><td>ESP32</td><td>DevKit v1 (38 pinów)</td><td>WROOM-32 + płytka</td></tr>";
-    html += "<tr><td>Wyświetlacz</td><td>TFT 3.5\" ILI9488 480x320</td><td>ILI9341 2.8\"</td></tr>";
-    html += "<tr><td>Zasilanie</td><td>Moduł 18650 z ochroną DW01A</td><td>3xAA lub USB</td></tr>";
+    html += "<tr><td>ESP32</td><td>DevKit v1 (38 pinĂłw)</td><td>WROOM-32 + pĹ‚ytka</td></tr>";
+    html += "<tr><td>WyĹ›wietlacz</td><td>TFT 3.5\" ILI9488 480x320</td><td>ILI9341 2.8\"</td></tr>";
+    html += "<tr><td>Zasilanie</td><td>ModuĹ‚ 18650 z ochronÄ… DW01A</td><td>3xAA lub USB</td></tr>";
     html += "<tr><td>Przyciski</td><td>2x tact switch (BOOT, RST)</td><td>-</td></tr>";
-    html += "<tr><td>Rezystory</td><td>2x 100kΩ (dzielnik napięcia)</td><td>-</td></tr>";
+    html += "<tr><td>Rezystory</td><td>2x 100kÎ© (dzielnik napiÄ™cia)</td><td>-</td></tr>";
     html += "</table>";
 
-    html += "<h3>Schemat połączeń ESP32 z TFT ILI9488</h3>";
+    html += "<h3>Schemat poĹ‚Ä…czeĹ„ ESP32 z TFT ILI9488</h3>";
     html += "<pre>";
     html += "ESP32 DevKit v1         TFT ILI9488 (3.5\" 480x320)\n";
-    html += "═══════════════════════════════════════════════════════\n";
-    html += "GPIO 18 (SCK)    ──────→  SCK / SCL        [ żółty ]\n";
-    html += "GPIO 23 (MOSI)   ──────→  SDI / MOSI       [ zielony ]\n";
-    html += "GPIO 19 (MISO)   ──────→  SDO / MISO       [ niebieski ] (opcjonalnie)\n";
-    html += "GPIO 15 (CS)     ──────→  CS               [ pomarańczowy ]\n";
-    html += "GPIO 2  (DC/RS)  ──────→  DC / RS           [ biały ]\n";
+    html += "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
+    html += "GPIO 18 (SCK)    â”€â”€â”€â”€â”€â”€â†’  SCK / SCL        [ ĹĽĂłĹ‚ty ]\n";
+    html += "GPIO 23 (MOSI)   â”€â”€â”€â”€â”€â”€â†’  SDI / MOSI       [ zielony ]\n";
+    html += "GPIO 19 (MISO)   â”€â”€â”€â”€â”€â”€â†’  SDO / MISO       [ niebieski ] (opcjonalnie)\n";
+    html += "GPIO 15 (CS)     â”€â”€â”€â”€â”€â”€â†’  CS               [ pomaraĹ„czowy ]\n";
+    html += "GPIO 2  (DC/RS)  â”€â”€â”€â”€â”€â”€â†’  DC / RS           [ biaĹ‚y ]\n";
     html += "\nZASILANIE:\n";
-    html += "3.3V             ──────→  VCC              [ czerwony ]\n";
-    html += "GND              ──────→  GND              [ czarny ]\n";
-    html += "3.3V             ──────→  LED (podświetlenie) [ przez rezystor 100Ω ]\n";
+    html += "3.3V             â”€â”€â”€â”€â”€â”€â†’  VCC              [ czerwony ]\n";
+    html += "GND              â”€â”€â”€â”€â”€â”€â†’  GND              [ czarny ]\n";
+    html += "3.3V             â”€â”€â”€â”€â”€â”€â†’  LED (podĹ›wietlenie) [ przez rezystor 100Î© ]\n";
     html += "</pre>";
 
-    html += "<h3>Pomiar napięcia baterii (dzielnik)</h3>";
+    html += "<h3>Pomiar napiÄ™cia baterii (dzielnik)</h3>";
     html += "<pre>";
-    html += "Bateria 18650 (+) ────┬─── [R1 100kΩ] ───┬───→ GPIO 34 (ADC)\n";
-    html += "                      │                 │\n";
-    html += "                     GND              [R2 100kΩ] ───┬─── GND\n";
-    html += "                                                   │\n";
+    html += "Bateria 18650 (+) â”€â”€â”€â”€â”¬â”€â”€â”€ [R1 100kÎ©] â”€â”€â”€â”¬â”€â”€â”€â†’ GPIO 34 (ADC)\n";
+    html += "                      â”‚                 â”‚\n";
+    html += "                     GND              [R2 100kÎ©] â”€â”€â”€â”¬â”€â”€â”€ GND\n";
+    html += "                                                   â”‚\n";
     html += "                                              Kondensator 100nF\n";
     html += "</pre>";
-    html += "<div class='note'><strong>Formuła:</strong> Vbat = Vadc × 2 (przy R1 = R2 = 100kΩ)</div>";
+    html += "<div class='note'><strong>FormuĹ‚a:</strong> Vbat = Vadc Ă— 2 (przy R1 = R2 = 100kÎ©)</div>";
 
-    html += "<h3>Podłączenie dotyku XPT2046 (opcjonalnie)</h3>";
+    html += "<h3>PodĹ‚Ä…czenie dotyku XPT2046 (opcjonalnie)</h3>";
     html += "<pre>";
     html += "ESP32                   XPT2046 (dotyk)\n";
-    html += "══════════════════════════════════════════\n";
-    html += "GPIO 4   ──────→  T_IRQ\n";
-    html += "GPIO 12  ──────→  T_DO\n";
-    html += "GPIO 13  ──────→  T_DIN\n";
-    html += "GPIO 14  ──────→  T_CS\n";
-    html += "GPIO 25  ──────→  T_CLK\n";
+    html += "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
+    html += "GPIO 4   â”€â”€â”€â”€â”€â”€â†’  T_IRQ\n";
+    html += "GPIO 12  â”€â”€â”€â”€â”€â”€â†’  T_DO\n";
+    html += "GPIO 13  â”€â”€â”€â”€â”€â”€â†’  T_DIN\n";
+    html += "GPIO 14  â”€â”€â”€â”€â”€â”€â†’  T_CS\n";
+    html += "GPIO 25  â”€â”€â”€â”€â”€â”€â†’  T_CLK\n";
     html += "</pre>";
 
     // Sekcja wgrania
-    html += "<h2>💾 Wgrywanie Firmware</h2>";
+    html += "<h2>đź’ľ Wgrywanie Firmware</h2>";
 
     html += "<h3>Pliki w folderze <code>pliki.bin/</code></h3>";
     html += "<table>";
     html += "<tr><th>Plik</th><th>Adres</th><th>Opis</th></tr>";
     html += "<tr><td><code>bootloader.bin</code></td><td><code>0x1000</code></td><td>Bootloader ESP32</td></tr>";
     html += "<tr><td><code>partitions.bin</code></td><td><code>0x8000</code></td><td>Tablica partycji</td></tr>";
-    html += "<tr><td><code>firmware.bin</code></td><td><code>0x10000</code></td><td>Główny program</td></tr>";
-    html += "<tr><td><code>littlefs.bin</code></td><td><code>0x290000</code></td><td>System plików (ikony, fonty)</td></tr>";
+    html += "<tr><td><code>firmware.bin</code></td><td><code>0x10000</code></td><td>GĹ‚Ăłwny program</td></tr>";
+    html += "<tr><td><code>littlefs.bin</code></td><td><code>0x290000</code></td><td>System plikĂłw (ikony, fonty)</td></tr>";
     html += "</table>";
 
-    html += "<h3>Sposób 1: WebSerial ESPTool (przeglądarka) - NAJPROSTSZY</h3>";
-    html += "<div class='success'>✅ <strong>Najprostsza metoda - bez instalowania żadnych programów!</strong></div>";
+    html += "<h3>SposĂłb 1: WebSerial ESPTool (przeglÄ…darka) - NAJPROSTSZY</h3>";
+    html += "<div class='success'>âś… <strong>Najprostsza metoda - bez instalowania ĹĽadnych programĂłw!</strong></div>";
     html += "<ol>";
-    html += "<li>Otwórz stronę: <a href='https://jason2866.github.io/WebSerial_ESPTool/' target='_blank'>https://jason2866.github.io/WebSerial_ESPTool/</a></li>";
-    html += "<li>Podłącz ESP32 przez USB</li>";
+    html += "<li>OtwĂłrz stronÄ™: <a href='https://jason2866.github.io/WebSerial_ESPTool/' target='_blank'>https://jason2866.github.io/WebSerial_ESPTool/</a></li>";
+    html += "<li>PodĹ‚Ä…cz ESP32 przez USB</li>";
     html += "<li>Kliknij <strong>Connect</strong> i wybierz port COM</li>";
-    html += "<li>Przytrzymaj <strong>BOOT</strong>, naciśnij <strong>RST</strong>, puść <strong>BOOT</strong></li>";
+    html += "<li>Przytrzymaj <strong>BOOT</strong>, naciĹ›nij <strong>RST</strong>, puĹ›Ä‡ <strong>BOOT</strong></li>";
     html += "<li>Wybierz pliki do wgrania (bootloader.bin, partitions.bin, firmware.bin, littlefs.bin)</li>";
     html += "<li>Kliknij <strong>Program</strong> i czekaj (~2-3 minuty)</li>";
-    html += "<li>Po zakończeniu naciśnij <strong>RST</strong> na ESP32</li>";
+    html += "<li>Po zakoĹ„czeniu naciĹ›nij <strong>RST</strong> na ESP32</li>";
     html += "</ol>";
 
-    html += "<h3>Sposób 2: ESP Flash Download Tool (Windows)</h3>";
+    html += "<h3>SposĂłb 2: ESP Flash Download Tool (Windows)</h3>";
     html += "<ol>";
     html += "<li>Pobierz <strong>ESP Flash Download Tool</strong> z: https://www.espressif.com/en/support/download/other-tools</li>";
     html += "<li>Wybierz chip: <strong>ESP32</strong>, COM port i BAUD: <strong>921600</strong></li>";
@@ -15996,11 +16167,11 @@ void setupWebServer() {
     html += "<code>partitions.bin @ 0x8000</code><br>";
     html += "<code>firmware.bin @ 0x10000</code><br>";
     html += "<code>littlefs.bin @ 0x290000</code></li>";
-    html += "<li>Zaznacz checkbox przy każdym pliku</li>";
-    html += "<li>Kliknij <strong>START</strong> (przytrzymaj BOOT i naciśnij RST)</li>";
+    html += "<li>Zaznacz checkbox przy kaĹĽdym pliku</li>";
+    html += "<li>Kliknij <strong>START</strong> (przytrzymaj BOOT i naciĹ›nij RST)</li>";
     html += "</ol>";
 
-    html += "<h3>Sposób 3: esptool.py (Windows/Linux/Mac)</h3>";
+    html += "<h3>SposĂłb 3: esptool.py (Windows/Linux/Mac)</h3>";
     html += "<pre>";
     html += "pip install esptool\n\n";
     html += "esptool.py --chip esp32 --port COM7 --baud 921600 write_flash \\\n";
@@ -16010,23 +16181,23 @@ void setupWebServer() {
     html += "  0x290000 littlefs.bin\n";
     html += "</pre>";
 
-    html += "<h3>Sposób 4: PlatformIO (VS Code)</h3>";
+    html += "<h3>SposĂłb 4: PlatformIO (VS Code)</h3>";
     html += "<pre>pio run --target upload</pre>";
 
     // Troubleshooting
-    html += "<h2>🔧 Troubleshooting</h2>";
+    html += "<h2>đź”§ Troubleshooting</h2>";
 
-    html += "<div class='warning'>⚠️ <strong>\"Failed to connect to ESP32\"</strong><br>";
-    html += "Przytrzymaj przycisk <strong>BOOT</strong> (GPIO0), naciśnij i puść <strong>RST</strong> (EN), puść <strong>BOOT</strong>. ESP32 wejdzie w tryb bootloadera.</div>";
+    html += "<div class='warning'>âš ď¸Ź <strong>\"Failed to connect to ESP32\"</strong><br>";
+    html += "Przytrzymaj przycisk <strong>BOOT</strong> (GPIO0), naciĹ›nij i puĹ›Ä‡ <strong>RST</strong> (EN), puĹ›Ä‡ <strong>BOOT</strong>. ESP32 wejdzie w tryb bootloadera.</div>";
 
-    html += "<div class='warning'>⚠️ <strong>Biały ekran TFT</strong><br>";
-    html += "Sprawdź połączenie zasilania i podświetlenia LED. Upewnij się że LED jest podłączony do 3.3V (lub 5V przez rezystor 100Ω).</div>";
+    html += "<div class='warning'>âš ď¸Ź <strong>BiaĹ‚y ekran TFT</strong><br>";
+    html += "SprawdĹş poĹ‚Ä…czenie zasilania i podĹ›wietlenia LED. Upewnij siÄ™ ĹĽe LED jest podĹ‚Ä…czony do 3.3V (lub 5V przez rezystor 100Î©).</div>";
 
-    html += "<div class='warning'>⚠️ <strong>Brak obrazu na TFT</strong><br>";
-    html += "Sprawdź połączenie SPI: SCK (GPIO18), MOSI (GPIO23), CS (GPIO15), DC (GPIO2). Upewnij się że masz wspólne GND.</div>";
+    html += "<div class='warning'>âš ď¸Ź <strong>Brak obrazu na TFT</strong><br>";
+    html += "SprawdĹş poĹ‚Ä…czenie SPI: SCK (GPIO18), MOSI (GPIO23), CS (GPIO15), DC (GPIO2). Upewnij siÄ™ ĹĽe masz wspĂłlne GND.</div>";
 
-    html += "<div class='note'>💡 <strong>Nie działa touch (XPT2046)</strong><br>";
-    html += "XPT2046 używa osobnego SPI. Sprawdź połączenia: T_CLK (GPIO25), T_CS (GPIO14), T_DIN (GPIO13), T_DO (GPIO12), T_IRQ (GPIO4).</div>";
+    html += "<div class='note'>đź’ˇ <strong>Nie dziaĹ‚a touch (XPT2046)</strong><br>";
+    html += "XPT2046 uĹĽywa osobnego SPI. SprawdĹş poĹ‚Ä…czenia: T_CLK (GPIO25), T_CS (GPIO14), T_DIN (GPIO13), T_DO (GPIO12), T_IRQ (GPIO4).</div>";
 
     // Stopka
     html += "<hr style='margin:40px 0;'>";
@@ -16036,24 +16207,30 @@ void setupWebServer() {
     html += "<a href='mailto:sp3kon@gmail.com'>sp3kon@gmail.com</a>";
     html += "</p>";
 
-    html += "<a href='/' class='back-btn'>← Powrót do głównej</a>";
+    html += "<a href='/' class='back-btn'>â† PowrĂłt do gĹ‚Ăłwnej</a>";
     html += "</body></html>";
 
     server->send(200, "text/html; charset=utf-8", html);
   });
 
-  // Strona konfiguracji - zawsze używa wbudowanego HTML z poprawnymi nazwami ekranów
+  // Strona konfiguracji - LittleFS jesli istnieje, potem wbudowany HTML
   server->on("/config", HTTP_GET, []() {
-    server->send(200, "text/html; charset=utf-8", getConfigHTML());
+    if (littleFsReady && LittleFS.exists("/index.html")) {
+      File f = LittleFS.open("/index.html", "r");
+      server->streamFile(f, "text/html; charset=utf-8");
+      f.close();
+    } else {
+      server->send(200, "text/html; charset=utf-8", getConfigHTML());
+    }
   });
   
   // API - pobierz wszystkie spoty (maksymalnie 50)
   server->on("/api/spots", HTTP_GET, []() {
-    // ZwiĂ„â„˘kszony bufor JSON dla 50 spotÄ‚łw (kaÄąÄ˝dy spot ~150-200 bajtÄ‚łw)
-    StaticJsonDocument<12000> doc;  // 50 spotÄ‚łw * ~200 bajtÄ‚łw = ~10KB + margines
+    // ZwiÄ‚â€žĂ˘â€žËkszony bufor JSON dla 50 spotĂ„â€šĹ‚w (kaĂ„Ä…Ă„Ëťdy spot ~150-200 bajtĂ„â€šĹ‚w)
+    StaticJsonDocument<12000> doc;  // 50 spotĂ„â€šĹ‚w * ~200 bajtĂ„â€šĹ‚w = ~10KB + margines
     JsonArray spotsArray = doc.createNestedArray("spots");
     
-    // ZwrÄ‚łĂ„â€ˇ wszystkie spoty (maksymalnie 50)
+    // ZwrĂ„â€šĹ‚Ä‚â€žĂ˘â‚¬Ë‡ wszystkie spoty (maksymalnie 50)
     for (int i = 0; i < spotCount; i++) {
       JsonObject spotObj = spotsArray.createNestedObject();
       spotObj["time"] = spots[i].time;
@@ -16074,11 +16251,11 @@ void setupWebServer() {
   
   // API - pobierz stacje APRS
   server->on("/api/aprs", HTTP_GET, []() {
-    // Bufor JSON dla 20 stacji APRS (kaÄąÄ˝da stacja ~200-250 bajtÄ‚łw)
-    StaticJsonDocument<6000> doc;  // 20 stacji * ~250 bajtÄ‚łw = ~5KB + margines
+    // Bufor JSON dla 20 stacji APRS (kaĂ„Ä…Ă„Ëťda stacja ~200-250 bajtĂ„â€šĹ‚w)
+    StaticJsonDocument<6000> doc;  // 20 stacji * ~250 bajtĂ„â€šĹ‚w = ~5KB + margines
     JsonArray aprsArray = doc.createNestedArray("stations");
     
-    // ZwrÄ‚łĂ„â€ˇ wszystkie stacje APRS (maksymalnie 20)
+    // ZwrĂ„â€šĹ‚Ä‚â€žĂ˘â‚¬Ë‡ wszystkie stacje APRS (maksymalnie 20)
     for (int i = 0; i < aprsStationCount; i++) {
       JsonObject stationObj = aprsArray.createNestedObject();
       stationObj["time"] = aprsStations[i].time;
@@ -16097,16 +16274,16 @@ void setupWebServer() {
     server->send(200, "application/json", json);
   });
 
-  // API - POTA (bufor z backendu, z krajami z QRZ jeśli dostępne)
+  // API - POTA (bufor z backendu, z krajami z QRZ jeĹ›li dostÄ™pne)
   server->on("/api/pota", HTTP_GET, []() {
-    StaticJsonDocument<12000> doc; // do 30 spotów * ~300-350 bajtów
+    StaticJsonDocument<12000> doc; // do 30 spotĂłw * ~300-350 bajtĂłw
     JsonArray spotsArray = doc.createNestedArray("spots");
     const int apiSpotLimit = 30;
     const int potaApiCount = (potaSpotCount < apiSpotLimit) ? potaSpotCount : apiSpotLimit;
     for (int i = 0; i < potaApiCount; i++) {
       JsonObject spotObj = spotsArray.createNestedObject();
       spotObj["time"] = potaSpots[i].time;
-      spotObj["spotTime"] = potaSpots[i].time; // zgodność z POTA API
+      spotObj["spotTime"] = potaSpots[i].time; // zgodnoĹ›Ä‡ z POTA API
       spotObj["callsign"] = potaSpots[i].callsign;
       spotObj["frequency"] = potaSpots[i].frequency;
       spotObj["mode"] = potaSpots[i].mode;
@@ -16124,7 +16301,7 @@ void setupWebServer() {
 
   // API - HAMALERT (ostatnie spoty z telnetu)
   server->on("/api/hamalert", HTTP_GET, []() {
-    StaticJsonDocument<12000> doc; // do 30 spotów
+    StaticJsonDocument<12000> doc; // do 30 spotĂłw
     JsonArray spotsArray = doc.createNestedArray("spots");
     const int apiSpotLimit = 30;
     const int hamalertApiCount = (hamalertSpotCount < apiSpotLimit) ? hamalertSpotCount : apiSpotLimit;
@@ -16169,26 +16346,46 @@ void setupWebServer() {
   
   // API - pobierz dane ISS
   server->on("/api/iss", HTTP_GET, []() {
+    // Snapshot all shared ISS values under the mutex before building the
+    // response. issCountry in particular is a String (heap-backed) that
+    // the ISS task writes under this same mutex - reading it without the
+    // lock here could occasionally race with that write mid-assignment
+    // (freed/reallocated buffer, inconsistent length) and crash the device.
+    double snapLat = 0, snapLng = 0, snapAlt = 0, snapSpeed = 0;
+    double snapAz = 0, snapElev = 0, snapDist = 0;
+    String snapCountry = "CZEKAJ...";
+    if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+      snapLat = issLat;
+      snapLng = issLng;
+      snapAlt = issAltitude;
+      snapSpeed = issSpeed;
+      snapAz = issAzimuth;
+      snapElev = issElevation;
+      snapDist = issDistance;
+      snapCountry = issCountry;
+      xSemaphoreGive(issDataMutex);
+    }
+
     StaticJsonDocument<512> doc;
-    doc["lat"] = issLat;
-    doc["lng"] = issLng;
-    doc["altitude"] = issAltitude;
-    doc["speed"] = issSpeed;
-    doc["azimuth"] = issAzimuth;
-    doc["elevation"] = issElevation;
-    doc["distance"] = issDistance;
-    doc["country"] = issCountry.length() > 0 ? issCountry : "Ocean / Brak danych";
+    doc["lat"] = snapLat;
+    doc["lng"] = snapLng;
+    doc["altitude"] = snapAlt;
+    doc["speed"] = snapSpeed;
+    doc["azimuth"] = snapAz;
+    doc["elevation"] = snapElev;
+    doc["distance"] = snapDist;
+    doc["country"] = snapCountry.length() > 0 ? snapCountry : "BRAK DANYCH";
     String response;
     serializeJson(doc, response);
     server->send(200, "application/json", response);
   });
   
-  // API - zapisz konfiguracjĂ„â„˘
+  // API - zapisz konfiguracjÄ‚â€žĂ˘â€žË
   server->on("/api/save", HTTP_POST, []() {
     if (server->hasArg("plain")) {
       String body = server->arg("plain");
       
-        StaticJsonDocument<8192> doc;  // Bufor dla pełnego payloadu konfiguracji z WWW
+        StaticJsonDocument<8192> doc;  // Bufor dla peĹ‚nego payloadu konfiguracji z WWW
       DeserializationError err = deserializeJson(doc, body);
       if (err) {
         server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"json_parse\"}");
@@ -16233,7 +16430,7 @@ void setupWebServer() {
         if (timezoneHours > 14) timezoneHours = 14;
       }
       
-      // WspÄ‚łÄąâ€šrzĂ„â„˘dne geograficzne (LAT/LON)
+      // WspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdne geograficzne (LAT/LON)
       bool latProvided = false;
       bool lonProvided = false;
       if (doc["user_lat"].is<float>() || doc["user_lat"].is<double>()) {
@@ -16244,14 +16441,14 @@ void setupWebServer() {
         userLon = doc["user_lon"].as<double>();
         lonProvided = true;
       }
-      // JeÄąâ€şli podano obie wspÄ‚łÄąâ€šrzĂ„â„˘dne, ustaw flagĂ„â„˘ jako waÄąÄ˝ne
-      // Uwaga: sprawdzamy czy wartoÄąâ€şci sĂ„â€¦ w prawidÄąâ€šowym zakresie (nie tylko != 0)
+      // JeĂ„Ä…Ă˘â‚¬Ĺźli podano obie wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdne, ustaw flagÄ‚â€žĂ˘â€žË jako waĂ„Ä…Ă„Ëťne
+      // Uwaga: sprawdzamy czy wartoĂ„Ä…Ă˘â‚¬Ĺźci sÄ‚â€žĂ˘â‚¬Â¦ w prawidĂ„Ä…Ă˘â‚¬Ĺˇowym zakresie (nie tylko != 0)
       if (latProvided && lonProvided && 
           userLat >= -90.0 && userLat <= 90.0 && 
           userLon >= -180.0 && userLon <= 180.0) {
         userLatLonValid = true;
       } else if (latProvided || lonProvided) {
-        // JeÄąâ€şli podano tylko jednĂ„â€¦ wspÄ‚łÄąâ€šrzĂ„â„˘dnĂ„â€¦, uznaj za nieprawidÄąâ€šowe
+        // JeĂ„Ä…Ă˘â‚¬Ĺźli podano tylko jednÄ‚â€žĂ˘â‚¬Â¦ wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnÄ‚â€žĂ˘â‚¬Â¦, uznaj za nieprawidĂ„Ä…Ă˘â‚¬Ĺˇowe
         userLatLonValid = false;
       }
       
@@ -16263,6 +16460,9 @@ void setupWebServer() {
       }
       if (doc["weather_key"].is<String>()) {
         weatherApiKey = doc["weather_key"].as<String>();
+      }
+      if (doc["n2yo_key"].is<String>()) {
+        n2yoApiKey = doc["n2yo_key"].as<String>();
       }
       if (doc["openwebrx_url"].is<String>()) {
         openWebRxUrl = doc["openwebrx_url"].as<String>();
@@ -16306,7 +16506,7 @@ void setupWebServer() {
         callsignColor = doc["callsign_color"].as<int>();
       }
       
-      // Konfiguracja filtrÄ‚łw CC-Cluster
+      // Konfiguracja filtrĂ„â€šĹ‚w CC-Cluster
       if (doc["cluster_noann"].is<bool>()) {
         clusterNoAnnouncements = doc["cluster_noann"].as<bool>();
       }
@@ -16467,16 +16667,16 @@ void setupWebServer() {
         if (aprsFilterRadius < 1) aprsFilterRadius = 1;
         if (aprsFilterRadius > 50) aprsFilterRadius = 50;
       }
-      // Uwaga: APRS uÄąÄ˝ywa wspÄ‚łÄąâ€šrzĂ„â„˘dnych z sekcji "Moja Stacja" (userLat, userLon) - nie ma osobnych pÄ‚łl
+      // Uwaga: APRS uĂ„Ä…Ă„Ëťywa wspĂ„â€šĹ‚Ă„Ä…Ă˘â‚¬ĹˇrzÄ‚â€žĂ˘â€žËdnych z sekcji "Moja Stacja" (userLat, userLon) - nie ma osobnych pĂ„â€šĹ‚l
       
-      // Konfiguracja trybu kalibracji dotyku (ręczne nadpisanie)
+      // Konfiguracja trybu kalibracji dotyku (rÄ™czne nadpisanie)
       if (doc["touch_swap_mode"].is<String>()) {
         String mode = doc["touch_swap_mode"].as<String>();
         // Resetuj wszystkie flagi
         touchSwapXY = false;
         touchInvertX = false;
         touchInvertY = false;
-        // Ustaw odpowiednią flagę lub kombinację
+        // Ustaw odpowiedniÄ… flagÄ™ lub kombinacjÄ™
         if (mode == "xy") {
           touchSwapXY = true;
         } else if (mode == "x") {
@@ -16487,11 +16687,11 @@ void setupWebServer() {
           touchInvertX = true;
           touchInvertY = true;
         } else if (mode == "rot90cw") {
-          // Obrót 90Â° w prawo (clockwise)
+          // ObrĂłt 90Ă‚Â° w prawo (clockwise)
           touchSwapXY = true;
           touchInvertX = true;
         } else if (mode == "rot90ccw") {
-          // Obrót 90Â° w lewo (counter-clockwise)
+          // ObrĂłt 90Ă‚Â° w lewo (counter-clockwise)
           touchSwapXY = true;
           touchInvertY = true;
         } else if (mode == "xy_both") {
@@ -16519,7 +16719,7 @@ void setupWebServer() {
         int rot = doc["tft_rotation"].as<int>();
         if (rot >= 0 && rot <= 3) {
           tftRotation = (uint8_t)rot;
-          touchRotation = tftRotation; // Synchronizuj rotację dotyku z TFT
+          touchRotation = tftRotation; // Synchronizuj rotacjÄ™ dotyku z TFT
           Serial.print("TFT rotation set to: ");
           Serial.print(tftRotation);
           Serial.print(", touch rotation synchronized to: ");
@@ -16620,7 +16820,7 @@ void setupWebServer() {
         pskMqttCallsign.toUpperCase();
       }
 
-      // Sanitizacja (najczÄ™stsza przyczyna: spacje na koÄ…cu SSID/hasÄ…a)
+      // Sanitizacja (najczĂ„â„˘stsza przyczyna: spacje na koĂ„â€¦cu SSID/hasĂ„â€¦a)
       wifiSSID.trim();
       wifiPassword.trim();
       wifiSSID2.trim();
@@ -16636,10 +16836,11 @@ void setupWebServer() {
       userLocator.trim();
       clusterFilterCommands.trim();
       weatherApiKey.trim();
+      n2yoApiKey.trim();
       openWebRxUrl.trim();
       aprsIsHost.trim();
       aprsCallsign.trim();
-      // KiwiSDR URL - może być puste (użytkownik nie musi ustawiać)
+      // KiwiSDR URL - moĹĽe byÄ‡ puste (uĹĽytkownik nie musi ustawiaÄ‡)
 
       if (potaApiUrl.length() == 0) {
         potaApiUrl = DEFAULT_POTA_API_URL;
@@ -16651,7 +16852,7 @@ void setupWebServer() {
         hamalertPort = DEFAULT_HAMALERT_PORT;
       }
 
-      // Kolejność ekranów konfigurowana z WWW
+      // KolejnoĹ›Ä‡ ekranĂłw konfigurowana z WWW
       if (doc["screen_order"].is<JsonArray>()) {
         JsonArray arr = doc["screen_order"].as<JsonArray>();
         int idx = 0;
@@ -16680,8 +16881,8 @@ void setupWebServer() {
           }
           idx++;
         }
-        // Jeśli JSON był krótszy, pozostałe uzupełnij wartościami domyślnymi,
-        // aby nie gubić ekranów (np. APRS RADAR) przy starszym/okrojonym payloadzie.
+        // JeĹ›li JSON byĹ‚ krĂłtszy, pozostaĹ‚e uzupeĹ‚nij wartoĹ›ciami domyĹ›lnymi,
+        // aby nie gubiÄ‡ ekranĂłw (np. APRS RADAR) przy starszym/okrojonym payloadzie.
         for (; idx < SCREEN_ORDER_COUNT; idx++) {
           screenOrder[idx] = DEFAULT_SCREEN_ORDER[idx];
         }
@@ -16725,13 +16926,13 @@ void setupWebServer() {
           timeoutStr.trim();
           timeoutCandidate = timeoutStr.toInt();
         }
-        // Zastosuj limity bez wywoływania savePreferences()
+        // Zastosuj limity bez wywoĹ‚ywania savePreferences()
         if (timeoutCandidate < 1) timeoutCandidate = 1;
         if (timeoutCandidate > 60) timeoutCandidate = 60;
         screenSaverTimeoutMin = timeoutCandidate;
       }
 
-      // Port bywa null, jeśli w JS wyszedł NaN
+      // Port bywa null, jeĹ›li w JS wyszedĹ‚ NaN
       if (doc["cluster_port"].is<int>()) {
         clusterPort = doc["cluster_port"].as<int>();
       } else {
@@ -16748,8 +16949,8 @@ void setupWebServer() {
         return;
       }
 
-      // Aktualizuj współrzędne z locatora TYLKO jeśli nie podano bezpośrednio współrzędnych
-      // Priorytet: jeÄąâ€şli userLatLonValid == true (podano bezpoÄąâ€şrednio LAT/LON), nie nadpisuj z locatora
+      // Aktualizuj wspĂłĹ‚rzÄ™dne z locatora TYLKO jeĹ›li nie podano bezpoĹ›rednio wspĂłĹ‚rzÄ™dnych
+      // Priorytet: jeĂ„Ä…Ă˘â‚¬Ĺźli userLatLonValid == true (podano bezpoĂ„Ä…Ă˘â‚¬Ĺźrednio LAT/LON), nie nadpisuj z locatora
       if (!userLatLonValid && userLocator.length() >= 4) {
         updateUserLatLonFromLocator();
       }
@@ -16763,14 +16964,14 @@ void setupWebServer() {
       
       // W trybie AP (wifiConnected=false) bez restartu nigdy nie przejdziemy na STA.
       // Restart jest najpewniejszy i upraszcza flow.
-      Serial.println("Zapisano konfiguracjĂ„â„˘. Restart za chwilĂ„â„˘...");
+      Serial.println("Zapisano konfiguracjÄ‚â€žĂ˘â€žË. Restart za chwilÄ‚â€žĂ˘â€žË...");
       requestRestart(1500);
     } else {
       server->send(400, "application/json", "{\"status\":\"error\"}");
     }
   });
   
-  // API - resetuj kalibrację dotyku do wartości domyślnych
+  // API - resetuj kalibracjÄ™ dotyku do wartoĹ›ci domyĹ›lnych
   server->on("/api/reset_touch", HTTP_POST, []() {
     touchXMin = TOUCH_X_MIN;
     touchXMax = TOUCH_X_MAX;
@@ -16788,7 +16989,7 @@ void setupWebServer() {
     server->send(200, "application/json", "{\"status\":\"ok\"}");
   });
 
-  // API - resetuj rotację TFT do wartości domyślnych
+  // API - resetuj rotacjÄ™ TFT do wartoĹ›ci domyĹ›lnych
   server->on("/api/reset_tft_rotation", HTTP_POST, []() {
     tftRotation = 1;
     applyTftRotation();
@@ -16799,7 +17000,7 @@ void setupWebServer() {
     requestRestart(1500);
   });
 
-  // API - usuń plik z LittleFS
+  // API - usuĹ„ plik z LittleFS
   server->on("/api/delete_file", HTTP_GET, []() {
     if (!server->hasArg("path")) {
       server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"missing_path\"}");
@@ -16867,7 +17068,7 @@ void setupWebServer() {
     }
   });
   
-  // API - pobierz konfigurację
+  // API - pobierz konfiguracjÄ™
   server->on("/api/config", HTTP_GET, []() {
     StaticJsonDocument<4096> doc;
     doc["wifi_ssid"] = wifiSSID;
@@ -16893,6 +17094,7 @@ void setupWebServer() {
     doc["qrz_user"] = qrzUsername;
     doc["qrz_pass"] = qrzPassword;
     doc["weather_key"] = weatherApiKey;
+    doc["n2yo_key"] = n2yoApiKey;
     doc["openwebrx_url"] = openWebRxUrl;
     doc["tft_backlight"] = backlightPercent;
     doc["tft_invert"] = sanitizeTftInvertSetting(tftInvertColors);
@@ -16934,7 +17136,7 @@ void setupWebServer() {
     doc["screen_saver_enabled"] = screenSaverEnabled;
     doc["screen_saver_timeout_min"] = screenSaverTimeoutMin;
     
-    // Touch calibration mode - priorytet: pełna kombinacja > rotacje > swap > both > single invert
+    // Touch calibration mode - priorytet: peĹ‚na kombinacja > rotacje > swap > both > single invert
     String touchMode = "none";
     if (touchSwapXY && touchInvertX && touchInvertY) {
       touchMode = "xy_both";
@@ -16973,9 +17175,9 @@ void setupWebServer() {
     doc["sys_heap_max"] = ESP.getMaxAllocHeap();
     doc["sys_chip"] = ESP.getChipModel();
     doc["sys_cpu"] = ESP.getCpuFreqMHz();
-    doc["sys_temp"] = temperatureRead();  // temperatura w °C
+    doc["sys_temp"] = temperatureRead();  // temperatura w Â°C
     #ifdef ENABLE_BATTERY_MONITORING
-    doc["sys_vcc"] = readBatteryVoltage();  // napięcie baterii
+    doc["sys_vcc"] = readBatteryVoltage();  // napiÄ™cie baterii
     #else
     doc["sys_vcc"] = 0;
     #endif
@@ -17029,7 +17231,7 @@ void setupWebServer() {
         return;
       }
       if (littleFsReady) {
-        LittleFS.remove(PSK_MAP_BMP_PATH); // Usuń starą mapę
+        LittleFS.remove(PSK_MAP_BMP_PATH); // UsuĹ„ starÄ… mapÄ™
         File f = LittleFS.open(PSK_MAP_BMP_PATH, "w");
         if (!f) {
           Serial.println("[UPLOAD] Failed to open file for writing");
@@ -17048,7 +17250,7 @@ void setupWebServer() {
       }
     } else if (upload.status == UPLOAD_FILE_END) {
       Serial.printf("[UPLOAD] Done: %d bytes\n", upload.totalSize);
-      // Odśwież mapę jeśli jesteśmy na ekranie PSK
+      // OdĹ›wieĹĽ mapÄ™ jeĹ›li jesteĹ›my na ekranie PSK
       if (currentScreen == SCREEN_PSK_MAP) {
         drawPskMap();
       }
@@ -17058,13 +17260,13 @@ void setupWebServer() {
   // Prosty formularz do uploadu mapy
   server->on("/upload", HTTP_GET, []() {
     String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>";
-    html += "<h1>Wgraj nową mapę BMP</h1>";
+    html += "<h1>Wgraj nowÄ… mapÄ™ BMP</h1>";
     html += "<form method='POST' action='/upload/bmp' enctype='multipart/form-data'>";
     html += "<input type='file' name='file' accept='.bmp'><br><br>";
-    html += "<input type='submit' value='Wgraj mapę'>";
+    html += "<input type='submit' value='Wgraj mapÄ™'>";
     html += "</form>";
     html += "<p>Rozmiar: 480x320 px</p>";
-    html += "<p><a href='/'>← Powrót</a></p>";
+    html += "<p><a href='/'>â† PowrĂłt</a></p>";
     html += "</body></html>";
     server->send(200, "text/html; charset=utf-8", html);
   });
@@ -17084,759 +17286,795 @@ String getMainHTML() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ESP32 HAM CLOCK</title>
   <style>
-    :root {
-      --bg: #0f172a;
-      --panel: #111827;
-      --panel-2: #1f2937;
-      --text: #e5e7eb;
-      --muted: #94a3b8;
-      --accent: #f59e0b;
-      --good: #22c55e;
-      --border: #334155;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: linear-gradient(180deg, #020617 0%, var(--bg) 100%);
-      color: var(--text);
-    }
-    .wrap {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    .hero, .panel {
-      background: rgba(17,24,39,0.92);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
-      margin-bottom: 16px;
-      box-shadow: 0 12px 28px rgba(0,0,0,0.24);
-    }
-    h1, h2 {
-      margin: 0 0 12px 0;
-    }
-    p {
-      color: var(--muted);
-      margin: 0;
-    }
-    .row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .card {
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px;
-    }
-    .label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      margin-bottom: 6px;
-    }
-    .value {
-      font-size: 20px;
-      font-weight: 700;
-      word-break: break-word;
-    }
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 16px;
-    }
-    button, a.btn {
-      background: var(--accent);
-      color: #111827;
-      border: none;
-      border-radius: 999px;
-      padding: 10px 14px;
-      font-weight: 700;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-    }
-    button.secondary {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    input, select {
-      width: 100%;
-      background: #020617;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 14px;
-    }
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .field label {
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .check {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-    }
-    .check input {
-      width: auto;
-      transform: scale(1.2);
-    }
-    .sectionTitle {
-      margin: 18px 0 10px 0;
-      font-size: 15px;
-      font-weight: 700;
-    }
-    details {
-      margin-top: 16px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-      background: rgba(2,6,23,0.55);
-    }
-    summary {
-      cursor: pointer;
-      font-weight: 700;
-    }
-    textarea {
-      width: 100%;
-      min-height: 320px;
-      background: #020617;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-      font-family: Consolas, monospace;
-      font-size: 13px;
-      resize: vertical;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 12px;
-    }
-    th, td {
-      padding: 10px 8px;
-      border-bottom: 1px solid var(--border);
-      text-align: left;
-      font-size: 14px;
-    }
-    th {
-      color: var(--muted);
-      font-weight: 600;
-    }
-    .ok {
-      color: var(--good);
-      font-weight: 700;
-    }
-    .hint {
-      margin-top: 10px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-    @media (max-width: 640px) {
-      .wrap { padding: 12px; }
-      .value { font-size: 18px; }
-      th, td { font-size: 13px; }
+    :root{--bg:#0f172a;--panel:#111827;--panel2:#1f2937;--text:#e5e7eb;--muted:#94a3b8;--accent:#f59e0b;--good:#22c55e;--warn:#ef4444;--border:#334155;--blue:#3b82f6}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;background:linear-gradient(180deg,#020617,var(--bg));color:var(--text);min-height:100vh}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    h1{font-size:22px;margin:0}
+    h2{font-size:17px;margin:0 0 10px 0;color:var(--accent)}
+    h3{font-size:14px;margin:0 0 8px 0;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+    p{color:var(--muted);margin:0;font-size:13px}
+    .hero{background:rgba(17,24,39,.92);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    .hero-left{display:flex;align-items:center;gap:12px}
+    .hero-right{display:flex;gap:8px;flex-wrap:wrap}
+    .panel{background:rgba(17,24,39,.92);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px}
+    .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px}
+    .row3{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px}
+    .card{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:12px}
+    .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
+    .value{font-size:18px;font-weight:700;word-break:break-word}
+    .value.sm{font-size:14px}
+    .ok{color:var(--good);font-weight:700}
+    .warn{color:var(--warn);font-weight:700}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    button,a.btn{background:var(--accent);color:#111827;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;text-decoration:none;font-size:13px;display:inline-flex;align-items:center;gap:4px}
+    button.sec{background:transparent;color:var(--text);border:1px solid var(--border)}
+    button.sm{padding:5px 10px;font-size:12px}
+    button.danger{background:var(--warn);color:#fff}
+    input,select{width:100%;background:#020617;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px}
+    input:focus,select:focus{outline:none;border-color:var(--accent)}
+    .field{display:flex;flex-direction:column;gap:4px}
+    .field label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+    .check{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;font-size:13px}
+    .check input{width:auto;transform:scale(1.2)}
+    .section{margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
+    .hint{margin-top:8px;font-size:12px;color:var(--muted)}
+    textarea{width:100%;min-height:200px;background:#020617;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px;font-family:Consolas,monospace;font-size:12px;resize:vertical}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:7px 6px;border-bottom:1px solid var(--border);text-align:left;font-size:13px}
+    th{color:var(--muted);font-weight:600;font-size:12px}
+    .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px}
+    .tab{background:transparent;color:var(--muted);border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+    .tab.active{background:var(--accent);color:#111827}
+    .tab:hover:not(.active){background:var(--panel2);color:var(--text)}
+    .tabcontent{display:none}
+    .tabcontent.active{display:block}
+    .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+    .status-dot.on{background:var(--good)}
+    .status-dot.off{background:var(--warn)}
+    @media(max-width:640px){
+      .wrap{padding:10px}
+      .hero{flex-direction:column;align-items:flex-start}
+      .value{font-size:15px}
+      th,td{font-size:12px;padding:5px 4px}
+      .tabs{gap:2px;padding:4px}
+      .tab{padding:6px 8px;font-size:11px}
+      .row{grid-template-columns:1fr}
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <section class="hero">
+<div class="wrap">
+
+  <div class="hero">
+    <div class="hero-left">
       <h1>ESP32 HAM CLOCK</h1>
-      <p>Wbudowany panel WWW. LittleFS nie ma index.html, ale urzadzenie dalej dziala i mozna korzystac z API oraz podstawowego podgladu.</p>
-      <div class="toolbar">
-        <button onclick="loadAll()" style="color:#ff0000;">Odswiez</button>
-        <a class="btn" href="/api/config" style="color:#ff0000;">API config</a>
-        <a class="btn" href="/api/spots" style="color:#ff0000;">API spots</a>
-        <a class="btn" href="/api/psk" style="color:#ff0000;">PSKReporter</a>
-        <a class="btn" href="/instruction" style="background:#28a745;color:#ff0000;">📖 Instrukcja</a>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Status</h2>
-      <div class="row">
-        <div class="card">
-          <div class="label">WiFi SSID</div>
-          <div id="ssid" class="value">-</div>
-        </div>
-        <div class="card">
-          <div class="label">Callsign</div>
-          <div id="callsign" class="value">-</div>
-        </div>
-        <div class="card">
-          <div class="label">APRS Host</div>
-          <div id="aprs" class="value">-</div>
-        </div>
-        <div class="card">
-          <div class="label">Cluster Filter</div>
-          <div id="filter" class="value">-</div>
-        </div>
-      </div>
-      <div class="hint">Jesli chcesz pelny frontend z LittleFS, mozna go dodac pozniej. Ten ekran jest awaryjnym panelem wbudowanym w firmware.</div>
-    </section>
-
-    <section class="panel">
-      <h2>System</h2>
-      <div class="row">
-        <div class="card">
-          <div class="label">Autor</div>
-          <div class="value">SP3KON (oryginał)</div>
-        </div>
-        <div class="card">
-          <div class="label">Modyfikacje</div>
-          <div class="value">SP9TNV</div>
-        </div>
-        <div class="card">
-          <div class="label">Wersja</div>
-          <div class="value">1.3</div>
-        </div>
-        <div class="card">
-          <div class="label">Licencja</div>
-          <div class="value">MIT License</div>
-        </div>
-      </div>
-      <div class="hint">
-        Projekt objęty licencją MIT. Możesz używać, modyfikować i rozpowszechniać kod pod warunkiem zachowania informacji o autorze oryginalnym (SP3KON).
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Ostatnie spoty</h2>
-      <div id="spotsState" class="hint">Ladowanie...</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Czas</th>
-            <th>Call</th>
-            <th>Freq</th>
-            <th>Mode</th>
-            <th>Kraj</th>
-          </tr>
-        </thead>
-        <tbody id="spotsBody"></tbody>
-      </table>
-    </section>
-
-    <section class="panel">
-      <h2>Konfiguracja</h2>
-      <p>Graficzny formularz dla najwazniejszych ustawien. JSON zostal nizej jako tryb zaawansowany.</p>
-      <div class="toolbar">
-        <button onclick="saveGraphicConfig()">Zapisz konfiguracje</button>
-        <button class="secondary" onclick="syncJsonFromForm()">Przepisz do JSON</button>
-      </div>
-      <div id="saveState" class="hint">Najpierw kliknij Odswiez albo poczekaj na zaladowanie konfiguracji.</div>
-
-      <div class="sectionTitle">WiFi i operator</div>
-      <div class="row">
-        <div class="field">
-          <label for="wifi_ssid">WiFi SSID</label>
-          <input id="wifi_ssid" type="text">
-        </div>
-        <div class="field">
-          <label for="wifi_pass">WiFi haslo</label>
-          <input id="wifi_pass" type="password">
-        </div>
-        <div class="field">
-          <label for="user_callsign">Twoj znak</label>
-          <input id="user_callsign" type="text">
-        </div>
-        <div class="field">
-          <label for="user_locator">Locator</label>
-          <input id="user_locator" type="text">
-        </div>
-        <div class="field">
-          <label for="timezone">Strefa czasowa</label>
-          <input id="timezone" type="number" min="-12" max="14" step="1">
-        </div>
-        <div class="field">
-          <label for="openwebrx_url">OpenWebRX URL</label>
-          <input id="openwebrx_url" type="text">
-        </div>
-      </div>
-
-      <div class="sectionTitle">DX / POTA / HamAlert</div>
-      <div class="row">
-        <div class="field">
-          <label for="cluster_host">DX cluster host</label>
-          <input id="cluster_host" type="text">
-        </div>
-        <div class="field">
-          <label for="cluster_port">DX cluster port</label>
-          <input id="cluster_port" type="number">
-        </div>
-        <div class="field">
-          <label for="pota_api_url">POTA API URL</label>
-          <input id="pota_api_url" type="text">
-        </div>
-        <div class="field">
-          <label for="hamalert_host">HamAlert host</label>
-          <input id="hamalert_host" type="text">
-        </div>
-        <div class="field">
-          <label for="hamalert_login">HamAlert login</label>
-          <input id="hamalert_login" type="text">
-        </div>
-        <div class="field">
-          <label for="hamalert_password">HamAlert haslo</label>
-          <input id="hamalert_password" type="password">
-        </div>
-      </div>
-
-      <div class="sectionTitle">APRS</div>
-      <div class="row">
-        <div class="field">
-          <label for="aprs_host">APRS host</label>
-          <input id="aprs_host" type="text">
-        </div>
-        <div class="field">
-          <label for="aprs_port">APRS port</label>
-          <input id="aprs_port" type="number">
-        </div>
-        <div class="field">
-          <label for="aprs_callsign">APRS callsign</label>
-          <input id="aprs_callsign" type="text">
-        </div>
-        <div class="field">
-          <label for="aprs_passcode">APRS passcode</label>
-          <input id="aprs_passcode" type="number">
-        </div>
-        <div class="field">
-          <label for="aprs_ssid">APRS SSID</label>
-          <input id="aprs_ssid" type="number">
-        </div>
-        <div class="field">
-          <label for="aprs_radius">APRS radius km</label>
-          <input id="aprs_radius" type="number">
-        </div>
-        <div class="field">
-          <label for="aprs_symbol">APRS symbol</label>
-          <input id="aprs_symbol" type="text">
-        </div>
-        <div class="field">
-          <label for="aprs_comment">APRS komentarz</label>
-          <input id="aprs_comment" type="text">
-        </div>
-      </div>
-      <div class="row">
-        <label class="check"><input id="aprs_beacon" type="checkbox"> Beacon APRS wlaczony</label>
-        <label class="check"><input id="aprs_alert_enabled" type="checkbox"> Alerty APRS wlaczone</label>
-        <label class="check"><input id="aprs_alert_nearby_enabled" type="checkbox"> Alerty nearby</label>
-        <label class="check"><input id="aprs_alert_wx_enabled" type="checkbox"> Alerty WX</label>
-      </div>
-
-      <div class="sectionTitle">PSKReporter</div>
-      <div class="row">
-        <div class="field">
-          <label for="psk_autorefresh">Auto odswiezanie (min)</label>
-          <input id="psk_autorefresh" type="number" min="0" max="60">
-        </div>
-        <div class="field">
-          <label for="psk_receiver">Znak do monitorowania</label>
-          <input id="psk_receiver" type="text" placeholder="np. SP9ABC">
-        </div>
-        <div class="field">
-          <label for="psk_maxage">Max wiek spotow (min)</label>
-          <input id="psk_maxage" type="number" min="5" max="120" value="60">
-        </div>
-      </div>
-      <div class="row">
-        <label class="check"><input id="psk_mqtt_enabled" type="checkbox"> Uzyj MQTT zamiast HTTP</label>
-      </div>
-      <div class="row" id="mqtt_fields" style="display:none;">
-        <div class="field">
-          <label for="psk_mqtt_server">MQTT Serwer</label>
-          <input id="psk_mqtt_server" type="text" placeholder="mqtt.pskreporter.info">
-        </div>
-        <div class="field">
-          <label for="psk_mqtt_port">MQTT Port</label>
-          <input id="psk_mqtt_port" type="number" min="1" max="65535" value="1883">
-        </div>
-        <div class="field">
-          <label for="psk_mqtt_callsign">MQTT Callsign (filter)</label>
-          <input id="psk_mqtt_callsign" type="text" placeholder="np. SP9ABC">
-        </div>
-      </div>
-
-      <div class="sectionTitle">Ekran i filtry</div>
-      <div class="row">
-        <div class="field">
-          <label for="tft_backlight">Podswietlenie TFT</label>
-          <input id="tft_backlight" type="number" min="10" max="100">
-        </div>
-        <div class="field">
-          <label for="tft_rotation">Rotacja TFT</label>
-          <select id="tft_rotation">
-            <option value="0">0</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="tft_lang">Jezyk TFT</label>
-          <select id="tft_lang">
-            <option value="pl">pl</option>
-            <option value="en">en</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="cluster_filters">Filtry cluster</label>
-          <input id="cluster_filters" type="text">
-        </div>
-      </div>
-      <div class="row">
-        <label class="check"><input id="tft_invert" type="checkbox"> Odwrocone kolory TFT</label>
-        <label class="check"><input id="cluster_usefilters" type="checkbox"> Uzyj filtrow cluster</label>
-        <label class="check"><input id="cluster_noann" type="checkbox"> Ukryj ANN</label>
-        <label class="check"><input id="cluster_nowwv" type="checkbox"> Ukryj WWV</label>
-        <label class="check"><input id="cluster_nowcy" type="checkbox"> Ukryj WCY</label>
-      </div>
-
-      <div class="sectionTitle">Kolejność ekranów TFT (12 pozycji)</div>
-      <div class="hint">Wybierz ekran dla każdej pozycji. 'Wyłączony' oznacza pustą pozycję.</div>
-      <div class="row">
-        <div class="field"><label for="screen_0">Pozycja 1</label><select id="screen_0"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_1">Pozycja 2</label><select id="screen_1"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_2">Pozycja 3</label><select id="screen_2"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_3">Pozycja 4</label><select id="screen_3"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_4">Pozycja 5</label><select id="screen_4"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_5">Pozycja 6</label><select id="screen_5"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_6">Pozycja 7</label><select id="screen_6"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_7">Pozycja 8</label><select id="screen_7"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_8">Pozycja 9</label><select id="screen_8"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_9">Pozycja 10</label><select id="screen_9"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_10">Pozycja 11</label><select id="screen_10"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-        <div class="field"><label for="screen_11">Pozycja 12</label><select id="screen_11"><option value="propagacja">Propagacja</option><option value="solarindex">Solar Index</option><option value="hamclock">Ham Clock</option><option value="dxcluster">DX Cluster</option><option value="aprsis">APRS-IS</option><option value="aprsradar">APRS Radar</option><option value="weather">Pogoda</option><option value="weatherforecast">Prognoza</option><option value="pota">POTA</option><option value="hamalert">HamAlert</option><option value="pskmap">PSK Map</option><option value="unlishunter">Unlis Hunter</option><option value="matrix">Matrix</option><option value="off">Wyłączony</option></select></div>
-      </div>
-
-      <div class="toolbar">
-        <button onclick="saveGraphicConfig()" style="background:#28a745;">Zapisz konfigurację</button>
-      </div>
-
-      <details>
-        <summary>Zaawansowany JSON</summary>
-        <div class="hint">Mozesz nadal edytowac pelny JSON recznie, jesli chcesz zmienic pola nieobecne w formularzu.</div>
-        <div class="toolbar">
-          <button onclick="saveConfig()">Zapisz JSON</button>
-        </div>
-        <textarea id="configEditor" spellcheck="false"></textarea>
-      </details>
-    </section>
+      <p id="fwVer"></p>
+    </div>
+    <div class="hero-right">
+      <span id="connStatus"><span class="status-dot off"></span>...</span>
+      <button class="sm" onclick="loadAll()">Odswiez</button>
+      <button class="sm sec" onclick="saveFromActiveTab()">Zapisz</button>
+    </div>
   </div>
 
-  <script>
-    let currentConfig = {};
+  <div class="tabs" id="tabBar">
+    <button class="tab active" onclick="showTab('dashboard')">Pulpit</button>
+    <button class="tab" onclick="showTab('station')">Stacja</button>
+    <button class="tab" onclick="showTab('services')">Uslugi</button>
+    <button class="tab" onclick="showTab('aprs')">APRS-IS</button>
+    <button class="tab" onclick="showTab('psk')">PSK Reporter</button>
+    <button class="tab" onclick="showTab('display')">Wyswietlacz</button>
+    <button class="tab" onclick="showTab('touch')">Dotyk</button>
+    <button class="tab" onclick="showTab('system')">System</button>
+  </div>
 
-    // Mapowanie kodów ekranów na przyjazne nazwy
-    const screenLabels = {
-      'propagacja': 'Propagacja',
-      'solarindex': 'Solar Index',
-      'hamclock': 'Ham Clock',
-      'dxcluster': 'DX Cluster',
-      'aprsis': 'APRS-IS',
-      'aprsradar': 'APRS Radar',
-      'weather': 'Pogoda',
-      'weatherforecast': 'Prognoza',
-      'pota': 'POTA',
-      'hamalert': 'HamAlert',
-      'pskmap': 'PSK Map',
-      'matrix': 'Matrix',
-      'unlishunter': 'Unlis Hunter',
-      'off': 'Wyłączony'
-    };
+  <!-- ========== TAB: PULPIT ========== -->
+  <div class="tabcontent active" id="tab-dashboard">
+    <div class="panel">
+      <h2>Status</h2>
+      <div class="row">
+        <div class="card"><div class="label">WiFi</div><div class="value" id="d_ssid">-</div></div>
+        <div class="card"><div class="label">Callsign</div><div class="value" id="d_call">-</div></div>
+        <div class="card"><div class="label">Uptime</div><div class="value" id="d_uptime">-</div></div>
+        <div class="card"><div class="label">IP / RSSI</div><div class="value sm" id="d_ip">-</div></div>
+        <div class="card"><div class="label">Cluster</div><div class="value sm" id="d_cluster">-</div></div>
+        <div class="card"><div class="label">APRS</div><div class="value sm" id="d_aprs">-</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>DX Spots</h2>
+      <div id="d_spotsState" class="hint">Ladowanie...</div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>Czas</th><th>Call</th><th>Freq</th><th>Mode</th><th>Kraj</th><th>Band</th><th>Spotter</th></tr></thead>
+      <tbody id="d_spotsBody"></tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>APRS Stacje</h2>
+      <div id="d_aprsState" class="hint">Ladowanie...</div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>Czas</th><th>Call</th><th>Symbol</th><th>Odleglosc</th><th>Komentarz</th></tr></thead>
+      <tbody id="d_aprsBody"></tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>POTA Spoty</h2>
+      <div id="d_potaState" class="hint">Ladowanie...</div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>Czas</th><th>Call</th><th>Freq</th><th>Mode</th><th>Spotter</th></tr></thead>
+      <tbody id="d_potaBody"></tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>HamAlert</h2>
+      <div id="d_hamState" class="hint">Ladowanie...</div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>Czas</th><th>Call</th><th>Freq</th><th>Mode</th><th>Kraj</th></tr></thead>
+      <tbody id="d_hamBody"></tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>ISS</h2>
+      <div class="row">
+        <div class="card"><div class="label">Pozycja</div><div class="value sm" id="d_issPos">-</div></div>
+        <div class="card"><div class="label">Alt / Predkosc</div><div class="value sm" id="d_issAlt">-</div></div>
+        <div class="card"><div class="label">Az / El / Dystans</div><div class="value sm" id="d_issAzi">-</div></div>
+        <div class="card"><div class="label">Kraj</div><div class="value sm" id="d_issCountry">-</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>PSK Reporter</h2>
+      <div id="d_pskState" class="hint">Ladowanie...</div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>Call</th><th>Band</th><th>Mode</th><th>SNR</th><th>Lat</th><th>Lon</th></tr></thead>
+      <tbody id="d_pskBody"></tbody></table>
+      </div>
+    </div>
+  </div>
 
-    function getScreenLabel(code) {
-      return screenLabels[code] || code;
-    }
+  <!-- ========== TAB: STACJA ========== -->
+  <div class="tabcontent" id="tab-station">
+    <div class="panel">
+      <h2>WiFi</h2>
+      <div class="row">
+        <div class="field"><label>SSID 1</label><input id="wifi_ssid" type="text"></div>
+        <div class="field"><label>Haslo 1</label><input id="wifi_pass" type="password"></div>
+        <div class="field"><label>SSID 2</label><input id="wifi_ssid2" type="text"></div>
+        <div class="field"><label>Haslo 2</label><input id="wifi_pass2" type="password"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Stacja</h2>
+      <div class="row">
+        <div class="field"><label>Callsign</label><input id="user_callsign" type="text"></div>
+        <div class="field"><label>Locator (np. KN09)</label><input id="user_locator" type="text"></div>
+        <div class="field"><label>Szerokosc geo (lat)</label><input id="user_lat" type="number" step="0.0001" min="-90" max="90"></div>
+        <div class="field"><label>Dlugosc geo (lon)</label><input id="user_lon" type="number" step="0.0001" min="-180" max="180"></div>
+        <div class="field"><label>Strefa czasowa (UTC offset)</label><input id="timezone" type="number" min="-12" max="14" step="1"></div>
+        <div class="field"><label>OpenWebRX URL</label><input id="openwebrx_url" type="text" placeholder="http://..."></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Klucze API</h2>
+      <div class="row">
+        <div class="field"><label>OpenWeather API Key</label><input id="weather_key" type="password" placeholder="openweathermap.org"></div>
+        <div class="field"><label>n2yo.com API Key (ISS)</label><input id="n2yo_key" type="password" placeholder="n2yo.com/api"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>QRZ.com</h2>
+      <div class="row">
+        <div class="field"><label>QRZ Username</label><input id="qrz_user" type="text"></div>
+        <div class="field"><label>QRZ Password</label><input id="qrz_pass" type="password"></div>
+      </div>
+      <div class="hint" id="qrzStatus"></div>
+    </div>
+  </div>
 
-    function byId(id) {
-      return document.getElementById(id);
-    }
+  <!-- ========== TAB: USLUGI ========== -->
+  <div class="tabcontent" id="tab-services">
+    <div class="panel">
+      <h2>DX Cluster</h2>
+      <div class="row">
+        <div class="field"><label>Host</label><input id="cluster_host" type="text"></div>
+        <div class="field"><label>Port</label><input id="cluster_port" type="number"></div>
+      </div>
+      <div class="section">
+        <div class="row">
+          <div class="field"><label>Filtry (max 3)</label><input id="cluster_filters" type="text" placeholder="f/spotter/..."></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label class="check"><input id="cluster_usefilters" type="checkbox"> Uzywaj filtrow</label>
+          <label class="check"><input id="cluster_noann" type="checkbox"> Ukryj ANN</label>
+          <label class="check"><input id="cluster_nowwv" type="checkbox"> Ukryj WWV</label>
+          <label class="check"><input id="cluster_nowcy" type="checkbox"> Ukryj WCY</label>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>POTA</h2>
+      <div class="row">
+        <div class="field"><label>Cluster Host</label><input id="pota_host" type="text"></div>
+        <div class="field"><label>Cluster Port</label><input id="pota_port" type="number"></div>
+        <div class="field"><label>Filter Command</label><input id="pota_filter" type="text" placeholder="f/dxctest"></div>
+        <div class="field"><label>API URL</label><input id="pota_api_url" type="text"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>HamAlert</h2>
+      <div class="row">
+        <div class="field"><label>Host</label><input id="hamalert_host" type="text"></div>
+        <div class="field"><label>Port</label><input id="hamalert_port" type="number"></div>
+        <div class="field"><label>Login</label><input id="hamalert_login" type="text"></div>
+        <div class="field"><label>Haslo</label><input id="hamalert_password" type="password"></div>
+      </div>
+    </div>
+  </div>
 
-    function setValue(id, value) {
-      byId(id).value = value ?? '';
-    }
+  <!-- ========== TAB: APRS-IS ========== -->
+  <div class="tabcontent" id="tab-aprs">
+    <div class="panel">
+      <h2>Polaczenie APRS-IS</h2>
+      <div class="row">
+        <div class="field"><label>Host</label><input id="aprs_host" type="text"></div>
+        <div class="field"><label>Port</label><input id="aprs_port" type="number"></div>
+        <div class="field"><label>Callsign</label><input id="aprs_callsign" type="text"></div>
+        <div class="field"><label>Passcode</label><input id="aprs_passcode" type="number"></div>
+        <div class="field"><label>SSID (0-15)</label><input id="aprs_ssid" type="number" min="0" max="15"></div>
+        <div class="field"><label>Promien (km, 1-50)</label><input id="aprs_radius" type="number" min="1" max="50"></div>
+        <div class="field"><label>Symbol (np. /-)</label><input id="aprs_symbol" type="text" maxlength="2"></div>
+        <div class="field"><label>Komentarz</label><input id="aprs_comment" type="text"></div>
+        <div class="field"><label>Interwal beacona (min)</label><input id="aprs_interval_min" type="number" min="1" max="60"></div>
+      </div>
+      <div class="section">
+        <label class="check"><input id="aprs_beacon" type="checkbox"> Beacon APRS wlaczony</label>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Alerty APRS</h2>
+      <div class="row">
+        <div class="field"><label>Lista alertow (CSV: call1,call2,...)</label><input id="aprs_alert" type="text" placeholder="SP9ABC,SP2XYZ"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="check"><input id="aprs_alert_enabled" type="checkbox"> Alerty wlaczone</label>
+        <label class="check"><input id="aprs_alert_nearby_enabled" type="checkbox"> Alert nearby</label>
+        <label class="check"><input id="aprs_alert_wx_enabled" type="checkbox"> Alert WX (pogoda)</label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="field"><label>Min. odstep czasowy (sek)</label><input id="aprs_alert_min_sec" type="number" min="0" max="3600"></div>
+        <div class="field"><label>Czas wyswietlania ekranu (sek)</label><input id="aprs_alert_screen_sec" type="number" min="3" max="300"></div>
+        <div class="field"><label>Max dystans alertu (km)</label><input id="aprs_alert_distance_km" type="number" min="1" max="5000"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>LED Alert</h2>
+      <div class="row">
+        <label class="check"><input id="enable_led_alert" type="checkbox"> LED alert wlaczony</label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="field"><label>Czas trwania (ms)</label><input id="led_alert_duration_ms" type="number" min="500" max="60000"></div>
+        <div class="field"><label>Interwalk migniec (ms)</label><input id="led_alert_blink_ms" type="number" min="50" max="5000"></div>
+      </div>
+    </div>
+  </div>
 
-    function setChecked(id, value) {
-      byId(id).checked = !!value;
-    }
+  <!-- ========== TAB: PSK REPORTER ========== -->
+  <div class="tabcontent" id="tab-psk">
+    <div class="panel">
+      <h2>PSK Reporter - Polaczenie</h2>
+      <div class="row">
+        <div class="field"><label>Callsign do monitorowania</label><input id="psk_receiver" type="text" placeholder="SP9ABC"></div>
+        <div class="field"><label>Max spotow</label><input id="psk_maxspots" type="number" min="10" max="100"></div>
+        <div class="field"><label>Okno czasowe (h)</label><input id="psk_hours" type="number" min="1" max="24"></div>
+        <div class="field"><label>Filtr pasma</label><input id="psk_band" type="text" placeholder="np. 20m"></div>
+        <div class="field"><label>Filtr mode</label><input id="psk_mode" type="text" placeholder="np. FT8"></div>
+        <div class="field"><label>Wlasny URL API</label><input id="psk_url" type="text"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>PSK Reporter - Monitoring HTTP</h2>
+      <div class="row">
+        <div class="field"><label>Callsign (raportowanie)</label><input id="psk_monitor_callsign" type="text"></div>
+        <div class="field"><label>Dni raportowania (0-62)</label><input id="psk_report_days" type="number" min="0" max="62"></div>
+        <div class="field"><label>Auto odswiezanie (min, 0=off)</label><input id="psk_auto_refresh" type="number" min="0" max="60"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>PSK Reporter - MQTT</h2>
+      <label class="check"><input id="psk_mqtt_enabled" type="checkbox"> Uzyj MQTT zamiast HTTP</label>
+      <div class="row" id="mqtt_fields" style="margin-top:8px;display:none">
+        <div class="field"><label>MQTT Server</label><input id="psk_mqtt_server" type="text" placeholder="mqtt.pskreporter.info"></div>
+        <div class="field"><label>MQTT Port</label><input id="psk_mqtt_port" type="number" min="1" max="65535"></div>
+        <div class="field"><label>MQTT Callsign (filter)</label><input id="psk_mqtt_callsign" type="text" placeholder="SP9ABC"></div>
+      </div>
+    </div>
+  </div>
 
-    function getInt(id, fallback) {
-      const value = parseInt(byId(id).value, 10);
-      return Number.isNaN(value) ? fallback : value;
-    }
+  <!-- ========== TAB: WYSWIETLACZ ========== -->
+  <div class="tabcontent" id="tab-display">
+    <div class="panel">
+      <h2>Ustawienia TFT</h2>
+      <div class="row">
+        <div class="field"><label>Podswietlenie (%)</label><input id="tft_backlight" type="number" min="10" max="100"></div>
+        <div class="field"><label>Rotacja TFT</label>
+          <select id="tft_rotation"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+        </div>
+        <div class="field"><label>Jezyk</label>
+          <select id="tft_lang"><option value="pl">Polski</option><option value="en">English</option></select>
+        </div>
+        <div class="field"><label>Rozmiar tabeli</label>
+          <select id="table_size"><option value="normal">Normalny</option><option value="enlarged">Powkszony</option></select>
+        </div>
+        <div class="field"><label>Odcien menu (0-255)</label><input id="menu_hue" type="number" min="0" max="255"></div>
+        <div class="field"><label>Kolor callsign (HEX lub int)</label><input id="callsign_color" type="number" min="0" max="65535"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="check"><input id="tft_invert" type="checkbox"> Odwrocone kolory TFT</label>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Automatyczne przelaczanie ekranow</h2>
+      <div class="row">
+        <label class="check"><input id="tft_auto_switch" type="checkbox"> Auto switch wlaczony</label>
+        <div class="field"><label>Czas na ekranie (sek)</label><input id="tft_switch_time_sec" type="number" min="5" max="300"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Wygaszacz ekranu (Matrix)</h2>
+      <div class="row">
+        <label class="check"><input id="screen_saver_enabled" type="checkbox"> Wygaszacz wlaczony</label>
+        <div class="field"><label>Timeout (min, 1-60)</label><input id="screen_saver_timeout_min" type="number" min="1" max="60"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Kolejnost ekranow (14 pozycji)</h2>
+      <p>Wybierz ekran dla kazdej pozycji. "Wylaczony" = pusta pozycja.</p>
+      <div class="row3" id="screenOrderRow"></div>
+      <div class="hint" id="screenOrderHint"></div>
+    </div>
+  </div>
 
-    function getString(id, fallback = '') {
-      const value = byId(id).value;
-      return value == null ? fallback : value;
-    }
+  <!-- ========== TAB: DOTYK ========== -->
+  <div class="tabcontent" id="tab-touch">
+    <div class="panel">
+      <h2>Kalibracja dotyku</h2>
+      <div class="row">
+        <div class="field"><label>Tryb obrotu</label>
+          <select id="touch_swap_mode">
+            <option value="none">Brak</option>
+            <option value="x">Invert X</option>
+            <option value="y">Invert Y</option>
+            <option value="both">Invert X+Y</option>
+            <option value="xy">Swap XY</option>
+            <option value="rot90cw">Obrut 90 CW</option>
+            <option value="rot90ccw">Obrut 90 CCW</option>
+            <option value="xy_both">Swap XY + Invert Both</option>
+          </select>
+        </div>
+        <div class="field"><label>Rotacja dotyku (0-3)</label>
+          <select id="touch_rotation"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Kalibracja surowa (0-4095)</h3>
+        <div class="row">
+          <div class="field"><label>X Min</label><input id="touch_xmin" type="number" min="0" max="4095"></div>
+          <div class="field"><label>X Max</label><input id="touch_xmax" type="number" min="0" max="4095"></div>
+          <div class="field"><label>Y Min</label><input id="touch_ymin" type="number" min="0" max="4095"></div>
+          <div class="field"><label>Y Max</label><input id="touch_ymax" type="number" min="0" max="4095"></div>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Flagi reczne</h3>
+        <div class="row">
+          <label class="check"><input id="touch_swap" type="checkbox"> Swap XY</label>
+          <label class="check"><input id="touch_invx" type="checkbox"> Invert X</label>
+          <label class="check"><input id="touch_invy" type="checkbox"> Invert Y</label>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button class="sec" onclick="resetTouch()">Reset do domyslnych</button>
+      </div>
+    </div>
+  </div>
 
-    function fillGraphicForm(cfg) {
-      setValue('wifi_ssid', cfg.wifi_ssid);
-      setValue('wifi_pass', cfg.wifi_pass);
-      setValue('user_callsign', cfg.user_callsign);
-      setValue('user_locator', cfg.user_locator);
-      setValue('timezone', cfg.timezone);
-      setValue('openwebrx_url', cfg.openwebrx_url);
-      setValue('cluster_host', cfg.cluster_host);
-      setValue('cluster_port', cfg.cluster_port);
-      setValue('pota_api_url', cfg.pota_api_url);
-      setValue('hamalert_host', cfg.hamalert_host);
-      setValue('hamalert_login', cfg.hamalert_login);
-      setValue('hamalert_password', cfg.hamalert_password);
-      setValue('aprs_host', cfg.aprs_host);
-      setValue('aprs_port', cfg.aprs_port);
-      setValue('aprs_callsign', cfg.aprs_callsign);
-      setValue('aprs_passcode', cfg.aprs_passcode);
-      setValue('aprs_ssid', cfg.aprs_ssid);
-      setValue('aprs_radius', cfg.aprs_radius);
-      setValue('aprs_symbol', cfg.aprs_symbol);
-      setValue('aprs_comment', cfg.aprs_comment);
-      setValue('psk_autorefresh', cfg.psk_autorefresh);
-      setValue('psk_receiver', cfg.psk_receiver);
-      setValue('psk_maxage', cfg.psk_maxage);
-      // MQTT PSK Reporter
-      setChecked('psk_mqtt_enabled', cfg.psk_mqtt_enabled);
-      setValue('psk_mqtt_server', cfg.psk_mqtt_server);
-      setValue('psk_mqtt_port', cfg.psk_mqtt_port);
-      setValue('psk_mqtt_callsign', cfg.psk_mqtt_callsign);
-      // Pokaz/ukryj pola MQTT
-      byId('mqtt_fields').style.display = cfg.psk_mqtt_enabled ? 'flex' : 'none';
-      setValue('tft_backlight', cfg.tft_backlight);
-      setValue('tft_rotation', cfg.tft_rotation);
-      setValue('tft_lang', cfg.tft_lang);
-      setValue('cluster_filters', cfg.cluster_filters);
-      setChecked('aprs_beacon', cfg.aprs_beacon);
-      setChecked('aprs_alert_enabled', cfg.aprs_alert_enabled);
-      setChecked('aprs_alert_nearby_enabled', cfg.aprs_alert_nearby_enabled);
-      setChecked('aprs_alert_wx_enabled', cfg.aprs_alert_wx_enabled);
-      setChecked('tft_invert', cfg.tft_invert);
-      setChecked('cluster_usefilters', cfg.cluster_usefilters);
-      setChecked('cluster_noann', cfg.cluster_noann);
-      setChecked('cluster_nowwv', cfg.cluster_nowwv);
-      setChecked('cluster_nowcy', cfg.cluster_nowcy);
-      // Ładowanie kolejności ekranów
-      if (Array.isArray(cfg.screen_order)) {
-        cfg.screen_order.forEach((code, index) => {
-          const select = byId('screen_' + index);
-          if (select) select.value = code || 'off';
-        });
-      }
-    }
+  <!-- ========== TAB: SYSTEM ========== -->
+  <div class="tabcontent" id="tab-system">
+    <div class="panel">
+      <h2>Informacje systemowe</h2>
+      <div class="row">
+        <div class="card"><div class="label">Firmware</div><div class="value sm" id="s_fw">-</div></div>
+        <div class="card"><div class="label">Uptime</div><div class="value sm" id="s_uptime">-</div></div>
+        <div class="card"><div class="label">IP</div><div class="value sm" id="s_ip">-</div></div>
+        <div class="card"><div class="label">RSSI</div><div class="value sm" id="s_rssi">-</div></div>
+        <div class="card"><div class="label">MAC</div><div class="value sm" id="s_mac">-</div></div>
+        <div class="card"><div class="label">Chip</div><div class="value sm" id="s_chip">-</div></div>
+        <div class="card"><div class="label">CPU MHz</div><div class="value sm" id="s_cpu">-</div></div>
+        <div class="card"><div class="label">Temp CPU</div><div class="value sm" id="s_temp">-</div></div>
+        <div class="card"><div class="label">Wolna pamiec</div><div class="value sm" id="s_heap">-</div></div>
+        <div class="card"><div class="label">Max alokacja</div><div class="value sm" id="s_heapmax">-</div></div>
+        <div class="card"><div class="label">Bateria</div><div class="value sm" id="s_vcc">-</div></div>
+        <div class="card"><div class="label">LittleFS</div><div class="value sm" id="s_littlefs">-</div></div>
+      </div>
+      <div class="hint" style="margin-top:12px">
+        Autor oryginalny: SP3KON | Modyfikacje: SP9TNV | Wersja: 1.4 | Licencja: MIT
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Wgraj mape BMP</h2>
+      <p>Rozmiar: 480x320 px</p>
+      <form id="bmpForm" enctype="multipart/form-data" style="margin-top:8px">
+        <input type="file" name="file" accept=".bmp" id="bmpFile">
+        <button type="submit" class="sm" style="margin-top:8px">Wgraj mape</button>
+      </form>
+      <div id="bmpStatus" class="hint"></div>
+    </div>
+    <div class="panel">
+      <h2>Zaawansowany JSON</h2>
+      <p>Reczna edycja pelnej konfiguracji.</p>
+      <div class="toolbar">
+        <button class="sm sec" onclick="syncJsonFromForm()">Formularz -> JSON</button>
+        <button class="sm" onclick="saveJsonEditor()">Zapisz JSON</button>
+      </div>
+      <textarea id="configEditor" spellcheck="false" style="margin-top:8px"></textarea>
+      <div id="saveState" class="hint"></div>
+    </div>
+  </div>
 
-    function buildConfigFromForm() {
-      return {
-        ...currentConfig,
-        wifi_ssid: getString('wifi_ssid'),
-        wifi_pass: getString('wifi_pass'),
-        user_callsign: getString('user_callsign'),
-        user_locator: getString('user_locator'),
-        timezone: getInt('timezone', currentConfig.timezone ?? 0),
-        openwebrx_url: getString('openwebrx_url'),
-        cluster_host: getString('cluster_host'),
-        cluster_port: getInt('cluster_port', currentConfig.cluster_port ?? 7300),
-        pota_api_url: getString('pota_api_url'),
-        hamalert_host: getString('hamalert_host'),
-        hamalert_login: getString('hamalert_login'),
-        hamalert_password: getString('hamalert_password'),
-        aprs_host: getString('aprs_host'),
-        aprs_port: getInt('aprs_port', currentConfig.aprs_port ?? 14580),
-        aprs_callsign: getString('aprs_callsign'),
-        aprs_passcode: getInt('aprs_passcode', currentConfig.aprs_passcode ?? 0),
-        aprs_ssid: getInt('aprs_ssid', currentConfig.aprs_ssid ?? 0),
-        aprs_radius: getInt('aprs_radius', currentConfig.aprs_radius ?? 50),
-        aprs_symbol: getString('aprs_symbol', '/-'),
-        aprs_comment: getString('aprs_comment'),
-        psk_autorefresh: getInt('psk_autorefresh', currentConfig.psk_autorefresh ?? 10),
-        psk_receiver: getString('psk_receiver'),
-        psk_maxage: getInt('psk_maxage', currentConfig.psk_maxage ?? 60),
-        // MQTT PSK Reporter
-        psk_mqtt_enabled: byId('psk_mqtt_enabled').checked,
-        psk_mqtt_server: getString('psk_mqtt_server'),
-        psk_mqtt_port: getInt('psk_mqtt_port', currentConfig.psk_mqtt_port ?? 1883),
-        psk_mqtt_callsign: getString('psk_mqtt_callsign'),
-        aprs_beacon: byId('aprs_beacon').checked,
-        aprs_alert_enabled: byId('aprs_alert_enabled').checked,
-        aprs_alert_nearby_enabled: byId('aprs_alert_nearby_enabled').checked,
-        aprs_alert_wx_enabled: byId('aprs_alert_wx_enabled').checked,
-        tft_backlight: getInt('tft_backlight', currentConfig.tft_backlight ?? 100),
-        tft_rotation: getInt('tft_rotation', currentConfig.tft_rotation ?? 1),
-        tft_lang: getString('tft_lang', 'pl'),
-        tft_invert: byId('tft_invert').checked,
-        cluster_filters: getString('cluster_filters'),
-        cluster_usefilters: byId('cluster_usefilters').checked,
-        cluster_noann: byId('cluster_noann').checked,
-        cluster_nowwv: byId('cluster_nowwv').checked,
-        cluster_nowcy: byId('cluster_nowcy').checked,
-        screen_order: Array.from({length: 12}, (_, i) => {
-          const select = byId('screen_' + i);
-          return select ? select.value : 'off';
-        })
-      };
-    }
+</div>
 
-    async function loadConfig() {
-      const res = await fetch('/api/config');
-      const cfg = await res.json();
-      currentConfig = cfg;
-      document.getElementById('ssid').textContent = cfg.wifi_ssid || '-';
-      document.getElementById('callsign').textContent = cfg.aprs_callsign || '-';
-      document.getElementById('aprs').textContent = (cfg.aprs_host || '-') + ':' + (cfg.aprs_port || '-');
-      document.getElementById('filter').textContent = cfg.cluster_filters || '(brak)';
-      fillGraphicForm(cfg);
-      renderScreenOrder(cfg.screen_order || []);
-      document.getElementById('configEditor').value = JSON.stringify(cfg, null, 2);
-      document.getElementById('saveState').textContent = 'Konfiguracja zaladowana. Mozesz ja edytowac i zapisac.';
-    }
+<script>
+let C = {};
+const SCREENS = [
+  ['propagacja','Propagacja'],['solarindex','Solar Index'],['hamclock','Ham Clock'],
+  ['dxcluster','DX Cluster'],['aprsis','APRS-IS'],['aprsradar','APRS Radar'],
+  ['weather','Pogoda'],['weatherforecast','Prognoza'],['pota','POTA'],
+  ['hamalert','HamAlert'],['pskmap','PSK Map'],['unlishunter','Unlis Hunter'],
+  ['matrix','Matrix'],['iss','ISS'],['off','Wylaczony']
+];
+const $=id=>document.getElementById(id);
+const val=(id,v)=>{ $(id).value=v??''; };
+const chk=(id,v)=>{ $(id).checked=!!v; };
+const gint=(id,d)=>{const v=parseInt($(id).value,10);return isNaN(v)?d:v;};
+const gstr=(id,d='')=>$(id).value??d;
 
-    function renderScreenOrder(screenOrder) {
-      const container = document.getElementById('screenOrder');
-      if (!container) return;
-      container.innerHTML = '';
-      if (!Array.isArray(screenOrder) || screenOrder.length === 0) {
-        container.innerHTML = '<div class="hint">Brak skonfigurowanych ekranów</div>';
-        return;
-      }
-      screenOrder.forEach((code, index) => {
-        if (code === 'off') return;
-        const label = getScreenLabel(code);
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.innerHTML = '<div class="label">Ekran ' + (index + 1) + '</div><div class="value">' + label + '</div>';
-        container.appendChild(div);
-      });
-    }
+function showTab(name){
+  document.querySelectorAll('.tabcontent').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  const el=$('tab-'+name); if(el) el.classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.toLowerCase().includes(getTabKeyword(name))) t.classList.add('active'); });
+}
+function getTabKeyword(n){return{dashboard:'pulpit',station:'stacja',services:'uslugi',aprs:'aprs',psk:'psk',display:'wyswietlacz',touch:'dotyk',system:'system'}[n]||'';}
 
-    function formatTimeToLocal(timeStr) {
-      if (!timeStr || timeStr === '-') return '-';
-      // Parsuj czas HH:MM lub HH:MM:SS
-      const match = timeStr.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
-      if (!match) return timeStr;
-      
-      let hour = parseInt(match[1], 10);
-      const minute = match[2];
-      
-      // Pobierz offset strefy czasowej z konfiguracji
-      const tzOffset = currentConfig.timezone || 1;
-      
-      // Dodaj offset (prost konwersja, bez DST)
-      let localHour = hour + tzOffset;
-      
-      // Obsługa przejścia przez północ
-      if (localHour < 0) localHour += 24;
-      else if (localHour >= 24) localHour -= 24;
-      
-      return (localHour < 10 ? '0' : '') + localHour + ':' + minute;
-    }
+function buildScreenOrderSelects(){
+  const c=$('screenOrderRow'); c.innerHTML='';
+  for(let i=0;i<14;i++){
+    const d=document.createElement('div'); d.className='field';
+    let opts=''; SCREENS.forEach(([v,l])=>{ opts+='<option value="'+v+'">'+l+'</option>'; });
+    d.innerHTML='<label>Poz. '+(i+1)+'</label><select id="screen_'+i+'">'+opts+'</select>';
+    c.appendChild(d);
+  }
+}
 
-    async function loadSpots() {
-      const res = await fetch('/api/spots');
-      const data = await res.json();
-      const spots = Array.isArray(data) ? data : (Array.isArray(data.spots) ? data.spots : []);
-      const body = document.getElementById('spotsBody');
-      const state = document.getElementById('spotsState');
-      body.innerHTML = '';
-
-      if (!Array.isArray(spots) || spots.length === 0) {
-        state.textContent = 'Brak spotow.';
-        return;
-      }
-
-      state.innerHTML = '<span class="ok">OK</span> Zaladowano ' + spots.length + ' rekordow.';
-      spots.slice(0, 20).forEach((spot) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td>' + formatTimeToLocal(spot.time || '-') + '</td>' +
-          '<td>' + (spot.callsign || '-') + '</td>' +
-          '<td>' + (spot.frequency || '-') + '</td>' +
-          '<td>' + (spot.mode || '-') + '</td>' +
-          '<td>' + (spot.country || '-') + '</td>';
-        body.appendChild(tr);
-      });
-    }
-
-    async function loadAll() {
-      try {
-        await loadConfig();
-        await loadSpots();
-      } catch (err) {
-        document.getElementById('spotsState').textContent = 'Blad odczytu API: ' + err;
-      }
-    }
-
-    function syncJsonFromForm() {
-      const payload = buildConfigFromForm();
-      byId('configEditor').value = JSON.stringify(payload, null, 2);
-      byId('saveState').textContent = 'JSON zaktualizowany na podstawie formularza.';
-    }
-
-    async function saveConfig() {
-      const editor = document.getElementById('configEditor');
-      const saveState = document.getElementById('saveState');
-      let parsed;
-
-      try {
-        parsed = JSON.parse(editor.value);
-      } catch (err) {
-        saveState.textContent = 'Blad JSON: ' + err;
-        return;
-      }
-
-      saveState.textContent = 'Zapisywanie...';
-
-      try {
-        const res = await fetch('/api/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsed)
-        });
-        const text = await res.text();
-        saveState.textContent = 'Zapisano. Odpowiedz: ' + text;
-        await loadConfig();
-      } catch (err) {
-        saveState.textContent = 'Blad zapisu: ' + err;
-      }
-    }
-
-    async function saveGraphicConfig() {
-      byId('configEditor').value = JSON.stringify(buildConfigFromForm(), null, 2);
-      await saveConfig();
-    }
-
-    // Event listener dla MQTT checkbox - pokaz/ukryj pola MQTT
-    byId('psk_mqtt_enabled').addEventListener('change', function() {
-      byId('mqtt_fields').style.display = this.checked ? 'flex' : 'none';
+function fillForm(cfg){
+  // Station
+  val('wifi_ssid',cfg.wifi_ssid); val('wifi_pass',cfg.wifi_pass);
+  val('wifi_ssid2',cfg.wifi_ssid2); val('wifi_pass2',cfg.wifi_pass2);
+  val('user_callsign',cfg.user_callsign); val('user_locator',cfg.user_locator);
+  val('user_lat',cfg.user_lat); val('user_lon',cfg.user_lon);
+  val('timezone',cfg.timezone); val('openwebrx_url',cfg.openwebrx_url);
+  val('weather_key',cfg.weather_key); val('n2yo_key',cfg.n2yo_key);
+  val('qrz_user',cfg.qrz_user); val('qrz_pass',cfg.qrz_pass);
+  if($('qrzStatus')) $('qrzStatus').textContent=cfg.qrz_status?('Status: '+cfg.qrz_status):'';
+  // DX Cluster
+  val('cluster_host',cfg.cluster_host); val('cluster_port',cfg.cluster_port);
+  val('cluster_filters',cfg.cluster_filters);
+  chk('cluster_usefilters',cfg.cluster_usefilters); chk('cluster_noann',cfg.cluster_noann);
+  chk('cluster_nowwv',cfg.cluster_nowwv); chk('cluster_nowcy',cfg.cluster_nowcy);
+  // POTA
+  val('pota_host',cfg.pota_host); val('pota_port',cfg.pota_port);
+  val('pota_filter',cfg.pota_filter); val('pota_api_url',cfg.pota_api_url);
+  // HamAlert
+  val('hamalert_host',cfg.hamalert_host); val('hamalert_port',cfg.hamalert_port);
+  val('hamalert_login',cfg.hamalert_login); val('hamalert_password',cfg.hamalert_password);
+  // APRS
+  val('aprs_host',cfg.aprs_host); val('aprs_port',cfg.aprs_port);
+  val('aprs_callsign',cfg.aprs_callsign); val('aprs_passcode',cfg.aprs_passcode);
+  val('aprs_ssid',cfg.aprs_ssid); val('aprs_radius',cfg.aprs_radius);
+  val('aprs_symbol',cfg.aprs_symbol); val('aprs_comment',cfg.aprs_comment);
+  val('aprs_interval_min',cfg.aprs_interval_min);
+  chk('aprs_beacon',cfg.aprs_beacon);
+  // APRS Alerts
+  val('aprs_alert',cfg.aprs_alert);
+  chk('aprs_alert_enabled',cfg.aprs_alert_enabled);
+  chk('aprs_alert_nearby_enabled',cfg.aprs_alert_nearby_enabled);
+  chk('aprs_alert_wx_enabled',cfg.aprs_alert_wx_enabled);
+  val('aprs_alert_min_sec',cfg.aprs_alert_min_sec);
+  val('aprs_alert_screen_sec',cfg.aprs_alert_screen_sec);
+  val('aprs_alert_distance_km',cfg.aprs_alert_distance_km);
+  // LED Alert
+  chk('enable_led_alert',cfg.enable_led_alert);
+  val('led_alert_duration_ms',cfg.led_alert_duration_ms);
+  val('led_alert_blink_ms',cfg.led_alert_blink_ms);
+  // PSK
+  val('psk_receiver',cfg.psk_receiver); val('psk_maxspots',cfg.psk_maxspots);
+  val('psk_hours',cfg.psk_hours); val('psk_band',cfg.psk_band);
+  val('psk_mode',cfg.psk_mode); val('psk_url',cfg.psk_url);
+  val('psk_monitor_callsign',cfg.psk_monitor_callsign);
+  val('psk_report_days',cfg.psk_report_days);
+  val('psk_auto_refresh',cfg.psk_auto_refresh);
+  chk('psk_mqtt_enabled',cfg.psk_mqtt_enabled);
+  val('psk_mqtt_server',cfg.psk_mqtt_server); val('psk_mqtt_port',cfg.psk_mqtt_port);
+  val('psk_mqtt_callsign',cfg.psk_mqtt_callsign);
+  $('mqtt_fields').style.display=cfg.psk_mqtt_enabled?'grid':'none';
+  // Display
+  val('tft_backlight',cfg.tft_backlight); val('tft_rotation',cfg.tft_rotation);
+  val('tft_lang',cfg.tft_lang); val('table_size',cfg.table_size);
+  chk('tft_invert',cfg.tft_invert); val('menu_hue',cfg.menu_hue);
+  val('callsign_color',cfg.callsign_color);
+  chk('tft_auto_switch',cfg.tft_auto_switch); val('tft_switch_time_sec',cfg.tft_switch_time_sec);
+  chk('screen_saver_enabled',cfg.screen_saver_enabled); val('screen_saver_timeout_min',cfg.screen_saver_timeout_min);
+  // Screen order
+  if(Array.isArray(cfg.screen_order)){
+    cfg.screen_order.forEach((code,i)=>{
+      const s=$('screen_'+i); if(s) s.value=code||'off';
     });
+  }
+  // Touch
+  val('touch_swap_mode',cfg.touch_swap_mode); val('touch_rotation',cfg.touch_rotation);
+  val('touch_xmin',cfg.touch_xmin); val('touch_xmax',cfg.touch_xmax);
+  val('touch_ymin',cfg.touch_ymin); val('touch_ymax',cfg.touch_ymax);
+  chk('touch_swap',cfg.touch_swap); chk('touch_invx',cfg.touch_invx); chk('touch_invy',cfg.touch_invy);
+  // Dashboard
+  $('d_ssid').textContent=cfg.wifi_ssid||'-';
+  $('d_call').textContent=cfg.user_callsign||cfg.aprs_callsign||'-';
+  $('d_uptime').textContent=cfg.uptime||'-';
+  $('d_ip').textContent=(cfg.sys_ip||'-')+(cfg.sys_rssi?' ('+cfg.sys_rssi+' dBm)':'');
+  $('d_cluster').textContent=cfg.cluster_host+':'+cfg.cluster_port;
+  $('d_aprs').textContent=cfg.aprs_host+':'+cfg.aprs_port;
+  // System
+  $('s_fw').textContent=cfg.fw_version||'-';
+  $('s_uptime').textContent=cfg.uptime||'-';
+  $('s_ip').textContent=cfg.sys_ip||'-';
+  $('s_rssi').textContent=(cfg.sys_rssi||0)+' dBm';
+  $('s_mac').textContent=cfg.sys_mac||'-';
+  $('s_chip').textContent=cfg.sys_chip||'-';
+  $('s_cpu').textContent=cfg.sys_cpu||'-';
+  $('s_temp').textContent=cfg.sys_temp?cfg.sys_temp.toFixed(1)+' C':'-';
+  $('s_heap').textContent=cfg.sys_heap?(cfg.sys_heap/1024).toFixed(1)+' KB':'-';
+  $('s_heapmax').textContent=cfg.sys_heap_max?(cfg.sys_heap_max/1024).toFixed(1)+' KB':'-';
+  $('s_vcc').textContent=cfg.sys_vcc?(cfg.sys_vcc+' V'):'N/A';
+  $('s_littlefs').textContent=(cfg.sys_littlefs_free/1024).toFixed(1)+'/'+(cfg.sys_littlefs_total/1024).toFixed(1)+' KB';
+  $('fwVer').textContent=cfg.fw_version||'';
+  // JSON editor
+  $('configEditor').value=JSON.stringify(cfg,null,2);
+}
 
+function buildFromForm(){
+  return {
+    ...C,
+    wifi_ssid:gstr('wifi_ssid'), wifi_pass:gstr('wifi_pass'),
+    wifi_ssid2:gstr('wifi_ssid2'), wifi_pass2:gstr('wifi_pass2'),
+    user_callsign:gstr('user_callsign'), user_locator:gstr('user_locator'),
+    user_lat:parseFloat(gstr('user_lat'))||0, user_lon:parseFloat(gstr('user_lon'))||0,
+    timezone:gint('timezone',0), openwebrx_url:gstr('openwebrx_url'),
+    weather_key:gstr('weather_key'), n2yo_key:gstr('n2yo_key'),
+    qrz_user:gstr('qrz_user'), qrz_pass:gstr('qrz_pass'),
+    cluster_host:gstr('cluster_host'), cluster_port:gint('cluster_port',7300),
+    cluster_filters:gstr('cluster_filters'),
+    cluster_usefilters:$('cluster_usefilters').checked,
+    cluster_noann:$('cluster_noann').checked,
+    cluster_nowwv:$('cluster_nowwv').checked,
+    cluster_nowcy:$('cluster_nowcy').checked,
+    pota_host:gstr('pota_host'), pota_port:gint('pota_port',7300),
+    pota_filter:gstr('pota_filter'), pota_api_url:gstr('pota_api_url'),
+    hamalert_host:gstr('hamalert_host'), hamalert_port:gint('hamalert_port',12345),
+    hamalert_login:gstr('hamalert_login'), hamalert_password:gstr('hamalert_password'),
+    aprs_host:gstr('aprs_host'), aprs_port:gint('aprs_port',14580),
+    aprs_callsign:gstr('aprs_callsign'), aprs_passcode:gint('aprs_passcode',0),
+    aprs_ssid:gint('aprs_ssid',0), aprs_radius:gint('aprs_radius',50),
+    aprs_symbol:gstr('aprs_symbol','/-'), aprs_comment:gstr('aprs_comment'),
+    aprs_interval_min:gint('aprs_interval_min',5),
+    aprs_beacon:$('aprs_beacon').checked,
+    aprs_alert:gstr('aprs_alert'),
+    aprs_alert_enabled:$('aprs_alert_enabled').checked,
+    aprs_alert_nearby_enabled:$('aprs_alert_nearby_enabled').checked,
+    aprs_alert_wx_enabled:$('aprs_alert_wx_enabled').checked,
+    aprs_alert_min_sec:gint('aprs_alert_min_sec',60),
+    aprs_alert_screen_sec:gint('aprs_alert_screen_sec',30),
+    aprs_alert_distance_km:parseFloat(gstr('aprs_alert_distance_km'))||100,
+    enable_led_alert:$('enable_led_alert').checked,
+    led_alert_duration_ms:gint('led_alert_duration_ms',5000),
+    led_alert_blink_ms:gint('led_alert_blink_ms',250),
+    psk_receiver:gstr('psk_receiver'), psk_maxspots:gint('psk_maxspots',30),
+    psk_hours:gint('psk_hours',12), psk_band:gstr('psk_band'),
+    psk_mode:gstr('psk_mode'), psk_url:gstr('psk_url'),
+    psk_monitor_callsign:gstr('psk_monitor_callsign'),
+    psk_report_days:gint('psk_report_days',7),
+    psk_auto_refresh:gint('psk_auto_refresh',10),
+    psk_mqtt_enabled:$('psk_mqtt_enabled').checked,
+    psk_mqtt_server:gstr('psk_mqtt_server'), psk_mqtt_port:gint('psk_mqtt_port',1883),
+    psk_mqtt_callsign:gstr('psk_mqtt_callsign'),
+    tft_backlight:gint('tft_backlight',100), tft_rotation:gint('tft_rotation',1),
+    tft_lang:gstr('tft_lang','pl'), table_size:gstr('table_size','normal'),
+    tft_invert:$('tft_invert').checked, menu_hue:gint('menu_hue',128),
+    callsign_color:gint('callsign_color',65535),
+    tft_auto_switch:$('tft_auto_switch').checked,
+    tft_switch_time_sec:gint('tft_switch_time_sec',30),
+    screen_saver_enabled:$('screen_saver_enabled').checked,
+    screen_saver_timeout_min:gint('screen_saver_timeout_min',5),
+    touch_swap_mode:gstr('touch_swap_mode','none'),
+    touch_rotation:gint('touch_rotation',1),
+    touch_xmin:gint('touch_xmin',200), touch_xmax:gint('touch_xmax',3900),
+    touch_ymin:gint('touch_ymin',200), touch_ymax:gint('touch_ymax',3900),
+    touch_swap:$('touch_swap').checked,
+    touch_invx:$('touch_invx').checked,
+    touch_invy:$('touch_invy').checked,
+    screen_order:Array.from({length:14},(_,i)=>{const s=$('screen_'+i);return s?s.value:'off';})
+  };
+}
+
+function fmtTime(t){
+  if(!t||t==='-')return'-';
+  const m=t.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if(!m)return t;
+  let h=parseInt(m[1],10)+(C.timezone||0);
+  if(h<0)h+=24; else if(h>=24)h-=24;
+  return(h<10?'0':'')+h+':'+m[2];
+}
+
+async function loadSpots(){
+  try{
+    const r=await fetch('/api/spots');const d=await r.json();
+    const spots=Array.isArray(d)?d:(d.spots||[]);
+    $('d_spotsState').innerHTML=spots.length?'<span class="ok">OK</span> '+spots.length+' spotow':'Brak spotow';
+    $('d_spotsBody').innerHTML='';
+    spots.slice(0,25).forEach(s=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td>'+fmtTime(s.time)+'</td><td>'+(s.callsign||'-')+'</td><td>'+(s.frequency||'-')+'</td><td>'+(s.mode||'-')+'</td><td>'+(s.country||'-')+'</td><td>'+(s.band||'-')+'</td><td>'+(s.spotter||'-')+'</td>';
+      $('d_spotsBody').appendChild(tr);
+    });
+  }catch(e){$('d_spotsState').textContent='Blad: '+e;}
+}
+
+async function loadAprs(){
+  try{
+    const r=await fetch('/api/aprs');const d=await r.json();
+    const stations=d.stations||[];
+    $('d_aprsState').innerHTML=stations.length?'<span class="ok">OK</span> '+stations.length+' stacji':'Brak stacji';
+    $('d_aprsBody').innerHTML='';
+    stations.slice(0,20).forEach(s=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td>'+fmtTime(s.time)+'</td><td>'+(s.callsign||'-')+'</td><td>'+(s.symbol||'-')+'</td><td>'+(s.distance?s.distance.toFixed(1)+' km':'-')+'</td><td>'+(s.comment||'-')+'</td>';
+      $('d_aprsBody').appendChild(tr);
+    });
+  }catch(e){$('d_aprsState').textContent='Blad: '+e;}
+}
+
+async function loadPota(){
+  try{
+    const r=await fetch('/api/pota');const d=await r.json();
+    const spots=d.spots||[];
+    $('d_potaState').innerHTML=spots.length?'<span class="ok">OK</span> '+spots.length+' spotow':'Brak spotow POTA';
+    $('d_potaBody').innerHTML='';
+    spots.slice(0,20).forEach(s=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td>'+fmtTime(s.time)+'</td><td>'+(s.callsign||'-')+'</td><td>'+(s.frequency||'-')+'</td><td>'+(s.mode||'-')+'</td><td>'+(s.spotter||'-')+'</td>';
+      $('d_potaBody').appendChild(tr);
+    });
+  }catch(e){$('d_potaState').textContent='Blad: '+e;}
+}
+
+async function loadHam(){
+  try{
+    const r=await fetch('/api/hamalert');const d=await r.json();
+    const spots=d.spots||[];
+    $('d_hamState').innerHTML=spots.length?'<span class="ok">OK</span> '+spots.length+' spotow':'Brak alertow';
+    $('d_hamBody').innerHTML='';
+    spots.slice(0,20).forEach(s=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td>'+fmtTime(s.time)+'</td><td>'+(s.callsign||'-')+'</td><td>'+(s.frequency||'-')+'</td><td>'+(s.mode||'-')+'</td><td>'+(s.country||'-')+'</td>';
+      $('d_hamBody').appendChild(tr);
+    });
+  }catch(e){$('d_hamState').textContent='Blad: '+e;}
+}
+
+async function loadISS(){
+  try{
+    const r=await fetch('/api/iss');const d=await r.json();
+    $('d_issPos').textContent=(d.lat||0).toFixed(4)+', '+(d.lng||0).toFixed(4);
+    $('d_issAlt').textContent=(d.altitude||0).toFixed(1)+' km / '+(d.speed||0).toFixed(0)+' km/h';
+    $('d_issAzi').textContent='Az:'+(d.azimuth||0).toFixed(1)+' El:'+(d.elevation||0).toFixed(1)+' Dist:'+(d.distance||0).toFixed(0)+' km';
+    $('d_issCountry').textContent=d.country||'-';
+  }catch(e){}
+}
+
+async function loadPsk(){
+  try{
+    const r=await fetch('/api/psk');const d=await r.json();
+    const spots=d.spots||[];
+    $('d_pskState').innerHTML=spots.length?'<span class="ok">OK</span> '+spots.length+' spotow':'Brak spotow PSK';
+    $('d_pskBody').innerHTML='';
+    spots.slice(0,25).forEach(s=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td>'+(s.callsign||'-')+'</td><td>'+(s.band||'-')+'</td><td>'+(s.mode||'-')+'</td><td>'+(s.snr!=null?s.snr.toFixed(0)+' dB':'-')+'</td><td>'+(s.lat?s.lat.toFixed(2):'-')+'</td><td>'+(s.lon?s.lon.toFixed(2):'-')+'</td>';
+      $('d_pskBody').appendChild(tr);
+    });
+  }catch(e){$('d_pskState').textContent='Blad: '+e;}
+}
+
+async function loadConfig(){
+  const r=await fetch('/api/config');const cfg=await r.json();
+  C=cfg; fillForm(cfg);
+  const cs=$('connStatus');
+  cs.innerHTML='<span class="status-dot on"></span>Polaczono';
+}
+
+async function loadAll(){
+  try{
+    await Promise.all([loadConfig(),loadSpots(),loadAprs(),loadPota(),loadHam(),loadISS(),loadPsk()]);
+  }catch(e){}
+}
+
+function syncJsonFromForm(){
+  $('configEditor').value=JSON.stringify(buildFromForm(),null,2);
+  $('saveState').textContent='JSON zaktualizowany z formularza.';
+}
+
+async function saveJsonEditor(){
+  let parsed;
+  try{parsed=JSON.parse($('configEditor').value);}catch(e){$('saveState').textContent='Blad JSON: '+e;return;}
+  $('saveState').textContent='Zapisywanie...';
+  try{
+    const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(parsed)});
+    const t=await r.text();
+    $('saveState').textContent='Zapisano. '+t;
+    setTimeout(()=>loadAll(),2000);
+  }catch(e){$('saveState').textContent='Blad zapisu: '+e;}
+}
+
+function saveFromActiveTab(){
+  $('configEditor').value=JSON.stringify(buildFromForm(),null,2);
+  saveJsonEditor();
+}
+
+async function resetTouch(){
+  if(!confirm('Reset kalibracji dotyku do wartosci domyslnych?'))return;
+  try{
+    await fetch('/api/reset_touch',{method:'POST'});
+    alert('Kalibracja zresetowana. Odswiez strone.');
     loadAll();
-  </script>
+  }catch(e){alert('Blad: '+e);}
+}
+
+buildScreenOrderSelects();
+
+$('psk_mqtt_enabled').addEventListener('change',function(){
+  $('mqtt_fields').style.display=this.checked?'grid':'none';
+});
+
+$('bmpForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  const file=$('bmpFile').files[0];
+  if(!file){alert('Wybierz plik');return;}
+  const fd=new FormData();fd.append('file',file);
+  $('bmpStatus').textContent='Wgrywanie...';
+  fetch('/upload/bmp',{method:'POST',body:fd}).then(r=>r.text()).then(t=>{
+    $('bmpStatus').textContent='OK: '+t;
+  }).catch(err=>{$('bmpStatus').textContent='Blad: '+err;});
+});
+
+loadAll();
+setInterval(()=>{loadSpots();loadAprs();loadPota();loadHam();loadISS();loadPsk();},15000);
+</script>
 </body>
 </html>
 )rawliteral";
 }
+
 String getConfigHTML() {
-  return getMainHTML(); // UÄąÄ˝ywa tego samego HTML z JavaScript
+  return getMainHTML(); // UĂ„Ä…Ă„Ëťywa tego samego HTML z JavaScript
 }
 
 #ifdef ENABLE_TFT_DISPLAY
@@ -17872,7 +18110,7 @@ void uiTaskLoop(void *parameter) {
         drawScreen((ScreenType)pendingAnyScreenId);
       }
 
-      // Dodatkowe sprawdzenia dla konkretnych ekranów tylko gdy pendingAnyScreen nie było true
+      // Dodatkowe sprawdzenia dla konkretnych ekranĂłw tylko gdy pendingAnyScreen nie byĹ‚o true
       if (!pendingAnyScreen) {
         if (pendingScreen1 && currentScreen == SCREEN_HAM_CLOCK && !inMenu && !aprsAlertScreenActive) {
           drawScreen(SCREEN_HAM_CLOCK);
@@ -17905,7 +18143,7 @@ void uiTaskLoop(void *parameter) {
       }
     }
 
-    // Sprawdzanie wygaszacza ekranu - co sekundę
+    // Sprawdzanie wygaszacza ekranu - co sekundÄ™
     static unsigned long lastScreenSaverCheckMs = 0;
     if (now - lastScreenSaverCheckMs >= 1000) {
       checkScreenSaverTimeout();
@@ -17947,7 +18185,7 @@ void uiTaskLoop(void *parameter) {
           updateScreen2Data();
           lastScreenUpdate = now;
         }
-        // Aktualizacja zegara co sekundę - WYŁĄCZONA
+        // Aktualizacja zegara co sekundÄ™ - WYĹÄ„CZONA
         // static unsigned long lastDxClockUpdate = 0;
         // if (now - lastDxClockUpdate >= 1000) {
         //   updateDxClusterClock();
@@ -17960,7 +18198,7 @@ void uiTaskLoop(void *parameter) {
           updateScreen7Data();
           lastScreen7UpdateMs = now;
         }
-        // Aktualizacja zegara co sekundę
+        // Aktualizacja zegara co sekundÄ™
         static unsigned long lastPotaClockUpdate = 0;
         if (now - lastPotaClockUpdate >= 1000) {
           updatePotaClusterClock();
@@ -17973,7 +18211,7 @@ void uiTaskLoop(void *parameter) {
           updateScreen8Data();
           lastScreen8UpdateMs = now;
         }
-        // Aktualizacja zegara co sekundę
+        // Aktualizacja zegara co sekundÄ™
         static unsigned long lastHamalertClockUpdate = 0;
         if (now - lastHamalertClockUpdate >= 1000) {
           updateHamalertClock();
@@ -18000,7 +18238,7 @@ void uiTaskLoop(void *parameter) {
           updateScreen4Data();
           lastScreen4UpdateMs = now;
         }
-        // Aktualizacja zegara co sekundę
+        // Aktualizacja zegara co sekundÄ™
         static unsigned long lastBandInfoClockUpdate = 0;
         if (now - lastBandInfoClockUpdate >= 1000) {
           updateBandInfoClock();
@@ -18015,7 +18253,7 @@ void uiTaskLoop(void *parameter) {
           updateScreen5Data();
           lastScreen5UpdateMs = now;
         }
-        // Aktualizacja zegara co sekundę
+        // Aktualizacja zegara co sekundÄ™
         static unsigned long lastWeatherClockUpdate = 0;
         if (now - lastWeatherClockUpdate >= 1000) {
           if (currentScreen == SCREEN_WEATHER_DSP) {
@@ -18035,7 +18273,7 @@ void uiTaskLoop(void *parameter) {
         updateUnlisHunter();
       }
       
-      // Obsługa MQTT dla PSK Reporter (gdy aktywny ekran PSK i włączony MQTT)
+      // ObsĹ‚uga MQTT dla PSK Reporter (gdy aktywny ekran PSK i wĹ‚Ä…czony MQTT)
       if (pskMqttEnabled && currentScreen == SCREEN_PSK_MAP && !pskMapMenuOpen) {
         loopPskMqtt();
       }
@@ -18048,14 +18286,14 @@ void uiTaskLoop(void *parameter) {
 
 // ========== FUNKCJE PSK REPORTER MAP ==========
 
-// Konwersja współrzędnych geograficznych na piksele ekranu - PROJEKCJA PLATE CARRÉE
+// Konwersja wspĂłĹ‚rzÄ™dnych geograficznych na piksele ekranu - PROJEKCJA PLATE CARRĂ‰E
 static void latLonToScreen(float lat, float lon, int &x, int &y) {
-  // Prosta projekcja walcowa (Plate Carrée) - liniowe odwzorowanie
-  // X: liniowe odwzorowanie długości geograficznej (-180 do +180)
+  // Prosta projekcja walcowa (Plate CarrĂ©e) - liniowe odwzorowanie
+  // X: liniowe odwzorowanie dĹ‚ugoĹ›ci geograficznej (-180 do +180)
   x = MAP_DISPLAY_X + (int)((lon - MAP_LON_MIN) / (MAP_LON_MAX - MAP_LON_MIN) * MAP_DISPLAY_W);
   
-  // Y: liniowe odwzorowanie szerokości geograficznej (+90 na górze, -90 na dole)
-  // Odwrócone: lat_max - lat daje Y=0 dla +90, Y=max dla -90
+  // Y: liniowe odwzorowanie szerokoĹ›ci geograficznej (+90 na gĂłrze, -90 na dole)
+  // OdwrĂłcone: lat_max - lat daje Y=0 dla +90, Y=max dla -90
   float yNormalized = (MAP_LAT_MAX - lat) / (MAP_LAT_MAX - MAP_LAT_MIN);
   y = MAP_DISPLAY_Y + (int)(yNormalized * MAP_DISPLAY_H);
 }
@@ -18064,15 +18302,21 @@ static void latLonToScreen(float lat, float lon, int &x, int &y) {
 bool fetchPskReporterData() {
   if (!wifiConnected) return false;
 
+  static WiFiClientSecure pskSecureClient;
+  static WiFiClient pskPlainClient;
   HTTPClient http;
-  // Użyj własnego URL jeśli ustawiony, w przeciwnym razie domyślny
+  // UĹĽyj wĹ‚asnego URL jeĹ›li ustawiony, w przeciwnym razie domyĹ›lny
   String baseUrl = pskCustomUrl.length() > 0 ? pskCustomUrl : "https://retrieve.pskreporter.info/query?";
+  // Auto-upgrade HTTP do HTTPS dla bezpieczeĹ„stwa
+  if (baseUrl.startsWith("http://")) {
+    baseUrl = "https://" + baseUrl.substring(7);
+  }
   String url = baseUrl;
-  // Upewnij się że URL kończy się ? lub &
+  // Upewnij siÄ™ ĹĽe URL koĹ„czy siÄ™ ? lub &
   if (!url.endsWith("?") && !url.endsWith("&")) {
     url += url.indexOf("?") >= 0 ? "&" : "?";
   }
-  // Użyj konfigurowalnego okna czasowego (w godzinach) lub raportu z dni wstecz
+  // UĹĽyj konfigurowalnego okna czasowego (w godzinach) lub raportu z dni wstecz
   int secondsWindow;
   if (pskReportDays > 0) {
     // Raport od X dni wstecz
@@ -18097,8 +18341,15 @@ bool fetchPskReporterData() {
   Serial.print("[PSK] URL: ");
   Serial.println(url);
 
-  http.setTimeout(10000);
-  http.begin(url);
+  // Wybierz klienta na podstawie protokołu HTTP/HTTPS
+  bool useHttps = url.startsWith("https://");
+  http.setTimeout(15000);
+  if (useHttps) {
+    pskSecureClient.setInsecure();
+    http.begin(pskSecureClient, url);
+  } else {
+    http.begin(pskPlainClient, url);
+  }
   int httpCode = http.GET();
 
   if (httpCode != 200) {
@@ -18108,11 +18359,30 @@ bool fetchPskReporterData() {
     return false;
   }
 
-  String payload = http.getString();
-  http.end();
+  // Parsowanie strumieniowe z filtrem zamiast getString()+deserializeJson()
+  // - unika trzymania caĹ‚ej odpowiedzi w pamiÄ™ci DWA razy naraz (raz jako
+  // String, raz jako dokument JSON) i pomija w locie pola, ktĂłrych i tak
+  // nie uĹĽywamy, wiÄ™c dokument jest mniejszy i szybszy do przetworzenia.
+  // Samo opĂłĹşnienie sieciowe do serwera pskreporter.info (ktĂłry bywa wolny
+  // przy wiÄ™kszych oknach czasowych/limitach spotĂłw) tym niestety nie da
+  // siÄ™ skrĂłciÄ‡ - to poza naszÄ… kontrolÄ….
+  WiFiClient *stream = http.getStreamPtr();
+
+  DynamicJsonDocument filter(256);
+  filter["receptions"][0]["callsign"] = true;
+  filter["receptions"][0]["locator"] = true;
+  filter["receptions"][0]["mode"] = true;
+  filter["receptions"][0]["snr"] = true;
+  filter["receptions"][0]["frequency"] = true;
+  filter["rx"][0]["callsign"] = true;
+  filter["rx"][0]["locator"] = true;
+  filter["rx"][0]["mode"] = true;
+  filter["rx"][0]["snr"] = true;
+  filter["rx"][0]["frequency"] = true;
 
   DynamicJsonDocument doc(8192);
-  DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
+  http.end();
 
   if (error) {
     Serial.print("[PSK] JSON parse error: ");
@@ -18138,7 +18408,7 @@ bool fetchPskReporterData() {
       int frequency = report["frequency"] | 0;
 
       if (callsign && locator) {
-        // Określ pasmo z częstotliwości
+        // OkreĹ›l pasmo z czÄ™stotliwoĹ›ci
         int freq_khz = frequency / 1000;
         int band = 0;
         if (freq_khz >= 3500 && freq_khz <= 4000) band = 80;
@@ -18148,16 +18418,16 @@ bool fetchPskReporterData() {
         else if (freq_khz >= 28000 && freq_khz <= 29700) band = 10;
         else if (freq_khz >= 50000 && freq_khz <= 54000) band = 6;
 
-        // Filtruj po pasmie jeśli ustawiony
+        // Filtruj po pasmie jeĹ›li ustawiony
         if (pskFilterBand.length() > 0) {
           int filterBand = pskFilterBand.toInt();
-          if (band != filterBand) continue; // Pomiń ten spot
+          if (band != filterBand) continue; // PomiĹ„ ten spot
         }
 
-        // Filtruj po trybie jeśli ustawiony
+        // Filtruj po trybie jeĹ›li ustawiony
         String modeStr = mode ? String(mode) : String("FT8");
         if (pskFilterMode.length() > 0) {
-          if (!modeStr.equalsIgnoreCase(pskFilterMode)) continue; // Pomiń ten spot
+          if (!modeStr.equalsIgnoreCase(pskFilterMode)) continue; // PomiĹ„ ten spot
         }
 
         double lat, lon;
@@ -18178,7 +18448,7 @@ bool fetchPskReporterData() {
 
   Serial.print("[PSK] Pobrano ");
   Serial.print(pskSpotCount);
-  Serial.println(" spotów");
+  Serial.println(" spotĂłw");
 
   return pskSpotCount > 0;
 }
@@ -18196,11 +18466,11 @@ static uint16_t getPskBandColor(int band) {
   }
 }
 
-// Rysowanie nagłówka (przezroczysty - na mapie)
+// Rysowanie nagĹ‚Ăłwka (przezroczysty - na mapie)
 static void drawPskMapHeader() {
-  // Bez tła - tekst bezpośrednio na mapie
+  // Bez tĹ‚a - tekst bezpoĹ›rednio na mapie
   tft.setTextSize(2);
-  // Czarna obwódka dla kontrastu
+  // Czarna obwĂłdka dla kontrastu
   tft.setTextColor(TFT_BLACK);
   tft.setCursor(12, 10);
   tft.print("PSKReporter MAP");
@@ -18208,14 +18478,14 @@ static void drawPskMapHeader() {
   tft.print("PSKReporter MAP");
   tft.setCursor(13, 11);
   tft.print("PSKReporter MAP");
-  // Główny tekst - biały
+  // GĹ‚Ăłwny tekst - biaĹ‚y
   tft.setTextColor(TFT_WHITE);
   tft.setCursor(12, 10);
   tft.print("PSKReporter MAP");
   
-  // Status auto-odświeżania
+  // Status auto-odĹ›wieĹĽania
   tft.setTextSize(1);
-  // Obwódka
+  // ObwĂłdka
   tft.setTextColor(TFT_BLACK);
   tft.setCursor(322, 12);
   tft.print("AUTO:" + String(pskAutoRefreshMinutes > 0 ? String(pskAutoRefreshMinutes) + "min" : "OFF"));
@@ -18227,9 +18497,9 @@ static void drawPskMapHeader() {
   tft.print("AUTO:" + String(pskAutoRefreshMinutes > 0 ? String(pskAutoRefreshMinutes) + "min" : "OFF"));
 }
 
-// Rysowanie przycisku menu w lewym górnym rogu
+// Rysowanie przycisku menu w lewym gĂłrnym rogu
 static void drawPskMenuButton() {
-  // Przycisk menu 30x26 w lewym górnym rogu (pomarańczowy jak nagłówek)
+  // Przycisk menu 30x26 w lewym gĂłrnym rogu (pomaraĹ„czowy jak nagĹ‚Ăłwek)
   tft.fillRect(2, 2, 30, 26, TFT_RADIO_ORANGE);
   tft.drawRect(2, 2, 30, 26, TFT_BLACK);
   // Trzy poziome kreski (hamburger menu)
@@ -18301,7 +18571,7 @@ static void drawPskKeyboard() {
 
 // Rysowanie wyboru pasm
 static void drawPskBandSelector() {
-  // Tło
+  // TĹ‚o
   tft.fillRect(40, 80, 400, 160, 0x18E3);
   tft.drawRect(40, 80, 400, 160, TFT_WHITE);
   
@@ -18341,9 +18611,9 @@ static void drawPskBandSelector() {
   tft.print("ZAMKNIJ");
 }
 
-// Rysowanie wyboru trybów
+// Rysowanie wyboru trybĂłw
 static void drawPskModeSelector() {
-  // Tło
+  // TĹ‚o
   tft.fillRect(40, 80, 400, 160, 0x18E3);
   tft.drawRect(40, 80, 400, 160, TFT_WHITE);
   
@@ -18383,19 +18653,19 @@ static void drawPskModeSelector() {
   tft.print("ZAMKNIJ");
 }
 
-// Rysowanie menu ustawień PSK
+// Rysowanie menu ustawieĹ„ PSK
 static void drawPskSettingsMenu() {
-  // Tło menu - półprzezroczyste ciemne (rozszerzone dla MQTT)
+  // TĹ‚o menu - pĂłĹ‚przezroczyste ciemne (rozszerzone dla MQTT)
   tft.fillRect(40, 40, 400, 230, 0x18E3); // Ciemny szary
   tft.drawRect(40, 40, 400, 230, TFT_WHITE);
   
-  // Tytuł
+  // TytuĹ‚
   tft.setTextSize(2);
   tft.setTextColor(TFT_WHITE);
   tft.setCursor(140, 50);
   tft.print("PSK Reporter - Filtry");
   
-  // Linia podziału
+  // Linia podziaĹ‚u
   tft.drawLine(50, 70, 430, 70, TFT_WHITE);
   
   // Pola edycji
@@ -18425,7 +18695,7 @@ static void drawPskSettingsMenu() {
   tft.setCursor(125, 120);
   tft.print(pskTempMode.length() > 0 ? pskTempMode.c_str() : "(wszystkie)");
   
-  // Max spotów
+  // Max spotĂłw
   tft.setTextColor(pskActiveField == PSK_FIELD_MAXSPOTS ? TFT_YELLOW : TFT_WHITE);
   tft.setCursor(250, 120);
   tft.print("Max:");
@@ -18450,6 +18720,15 @@ static void drawPskSettingsMenu() {
     tft.setCursor(305, 150);
     String srv = pskTempMqttServer.length() > 12 ? pskTempMqttServer.substring(0, 12) + "..." : pskTempMqttServer;
     tft.print(srv.length() > 0 ? srv.c_str() : "default");
+  } else {
+    // Dni wstecz (gdy HTTP - po prawej stronie)
+    tft.setTextColor(pskActiveField == PSK_FIELD_DAYS ? TFT_YELLOW : TFT_WHITE);
+    tft.setCursor(250, 150);
+    tft.print("Dni:");
+    tft.fillRect(290, 145, 60, 20, pskActiveField == PSK_FIELD_DAYS ? TFT_DARKGREY : TFT_BLACK);
+    tft.setCursor(300, 150);
+    tft.print(pskTempReportDays);
+    tft.print(" d");
   }
   
   // MQTT Callsign (tylko gdy MQTT)
@@ -18477,26 +18756,26 @@ static void drawPskSettingsMenu() {
   tft.setCursor(310, 220);
   tft.print("ANULUJ");
   
-  // Podpowiedź
+  // PodpowiedĹş
   tft.setTextColor(TFT_CYAN);
   tft.setCursor(60, 195);
   tft.print("Dotknij pola aby edytowac, ZAPISZ aby zastosowac");
   
-  // Jeśli aktywna klawiatura - narysuj ją
+  // JeĹ›li aktywna klawiatura - narysuj jÄ…
   if (pskActiveField == PSK_FIELD_KEYBOARD) {
     drawPskKeyboard();
   }
-  // Jeśli wybor pasma - narysuj selektor
+  // JeĹ›li wybor pasma - narysuj selektor
   else if (pskActiveField == PSK_FIELD_BAND_SELECT) {
     drawPskBandSelector();
   }
-  // Jeśli wybor trybu - narysuj selektor
+  // JeĹ›li wybor trybu - narysuj selektor
   else if (pskActiveField == PSK_FIELD_MODE_SELECT) {
     drawPskModeSelector();
   }
 }
 
-// Funkcja obliczająca dystans (km) - wzór Haversine
+// Funkcja obliczajÄ…ca dystans (km) - wzĂłr Haversine
 static float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
   float p = 0.017453292519943295; // Pi/180
   float a = 0.5 - cos((lat2 - lat1) * p) / 2 +
@@ -18505,10 +18784,10 @@ static float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
   return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
 }
 
-// Funkcja zwracająca kolor linii zależny od odległości DX
+// Funkcja zwracajÄ…ca kolor linii zaleĹĽny od odlegĹ‚oĹ›ci DX
 static uint16_t getDxColor(float distance) {
   if (distance < 500) return TFT_GREEN;      // Bardzo blisko
-  else if (distance < 2000) return TFT_YELLOW; // Europa / Średni dystans
+  else if (distance < 2000) return TFT_YELLOW; // Europa / Ĺšredni dystans
   else if (distance < 5000) return TFT_ORANGE; // Daleko
   else return TFT_MAGENTA;                     // DX (Transatlantyki itp.)
 }
@@ -18530,7 +18809,7 @@ static void drawPskMapLegend() {
   tft.print("Tap: Refresh");
 }
 
-// Główna funkcja rysująca
+// GĹ‚Ăłwna funkcja rysujÄ…ca
 void drawPskMap() {
   Serial.printf("[PSK] drawPskMap start, pskMapMenuOpen=%d\n", pskMapMenuOpen);
   if (!tftInitialized) return;
@@ -18554,19 +18833,20 @@ void drawPskMap() {
   
   // Wybierz tryb pracy: MQTT lub HTTP
   if (pskMqttEnabled) {
-    // Tryb MQTT - loop obsługuje wszystko w tle
+    // Tryb MQTT - loop obsĹ‚uguje wszystko w tle
     loopPskMqtt();
   } else {
-    // Tryb HTTP - auto-odświeżanie PSKReporter
+    // Tryb HTTP - auto-odĹ›wieĹĽanie PSKReporter
     if (pskAutoRefreshMinutes > 0) {
       unsigned long refreshIntervalMs = (unsigned long)pskAutoRefreshMinutes * 60 * 1000;
-      if (now - lastPskFetchMs > refreshIntervalMs) {
+      // Fetchuj: przy pierwszym renderze (pskSpotCount==0) lub po uplywie interwalu
+      if (pskSpotCount == 0 || now - lastPskFetchMs > refreshIntervalMs) {
         fetchPskReporterData();
         lastPskFetchMs = now;
       }
     }
   }
-  // Rysowanie linii od pozycji użytkownika do stacji
+  // Rysowanie linii od pozycji uĹĽytkownika do stacji
   Serial.printf("[PSK] drawPskMap START: userLat=%.4f, userLon=%.4f, valid=%d, locator='%s'\n",
                 userLat, userLon, userLatLonValid, userLocator.c_str());
   int userX = 0, userY = 0;
@@ -18585,8 +18865,8 @@ void drawPskMap() {
       latLonToScreen(pskSpots[i].lat, pskSpots[i].lon, x, y);
       uint16_t color = getPskBandColor(pskSpots[i].band);
       
-      // Rysuj linię od użytkownika do stacji jeśli oba są na mapie
-      // Kolor zależy od odległości DX
+      // Rysuj liniÄ™ od uĹĽytkownika do stacji jeĹ›li oba sÄ… na mapie
+      // Kolor zaleĹĽy od odlegĹ‚oĹ›ci DX
       if (userOnMap) {
         float dist = calculateDistance(userLat, userLon, pskSpots[i].lat, pskSpots[i].lon);
         uint16_t lineColor = getDxColor(dist);
@@ -18598,7 +18878,7 @@ void drawPskMap() {
     }
   }
 
-  // Rysuj czerwoną kropkę na pozycji użytkownika (na wierzchu)
+  // Rysuj czerwonÄ… kropkÄ™ na pozycji uĹĽytkownika (na wierzchu)
   if (userOnMap) {
     Serial.printf("[PSK] Drawing RED DOT at X=%d, Y=%d\n", userX, userY);
     tft.fillCircle(userX, userY, 3, TFT_RED);
@@ -18609,9 +18889,9 @@ void drawPskMap() {
   }
   drawPskMapLegend();
   drawSwitchScreenFooter();
-  // Przycisk menu w lewym górnym rogu
+  // Przycisk menu w lewym gĂłrnym rogu
   drawPskMenuButton();
-  // Jeśli menu otwarte, narysuj je na wierzchu
+  // JeĹ›li menu otwarte, narysuj je na wierzchu
   if (pskMapMenuOpen) {
     Serial.println("[PSK] Drawing settings menu");
     drawPskSettingsMenu();
@@ -18619,7 +18899,7 @@ void drawPskMap() {
   Serial.println("[PSK] drawPskMap end");
 }
 
-// Obsługa dotyku klawiatury
+// ObsĹ‚uga dotyku klawiatury
 static void handlePskKeyboardTouch(uint16_t x, uint16_t y) {
   int keyW = 32, keyH = 22, gap = 4;
 
@@ -18645,7 +18925,7 @@ static void handlePskKeyboardTouch(uint16_t x, uint16_t y) {
     }
     pskActiveField = PSK_FIELD_NONE;
     pskKeyboardBuffer = "";
-    pskKeyboardActive = false;  // Odblokuj nawigację
+    pskKeyboardActive = false;  // Odblokuj nawigacjÄ™
     drawPskSettingsMenu();
     return;
   }
@@ -18653,7 +18933,7 @@ static void handlePskKeyboardTouch(uint16_t x, uint16_t y) {
   if (x >= 350 && x < 435 && y >= 278 && y < 306) {
     pskActiveField = PSK_FIELD_NONE;
     pskKeyboardBuffer = "";
-    pskKeyboardActive = false;  // Odblokuj nawigację
+    pskKeyboardActive = false;  // Odblokuj nawigacjÄ™
     drawPskSettingsMenu();
     return;
   }
@@ -18691,7 +18971,7 @@ static void handlePskKeyboardTouch(uint16_t x, uint16_t y) {
   }
 }
 
-// Obsługa dotyku selektora pasm
+// ObsĹ‚uga dotyku selektora pasm
 static void handlePskBandSelectorTouch(uint16_t x, uint16_t y) {
   const char* bands[] = {"160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "ALL"};
   int bandCount = 11;
@@ -18699,7 +18979,7 @@ static void handlePskBandSelectorTouch(uint16_t x, uint16_t y) {
   int startX = 60, startY = 120;
   int cols = 5;
   
-  // Sprawdź przyciski pasm
+  // SprawdĹş przyciski pasm
   for (int i = 0; i < bandCount; i++) {
     int col = i % cols;
     int row = i / cols;
@@ -18725,7 +19005,7 @@ static void handlePskBandSelectorTouch(uint16_t x, uint16_t y) {
   }
 }
 
-// Obsługa dotyku selektora trybów
+// ObsĹ‚uga dotyku selektora trybĂłw
 static void handlePskModeSelectorTouch(uint16_t x, uint16_t y) {
   const char* modes[] = {"FT8", "FT4", "JS8", "PSK31", "PSK63", "RTTY", "CW", "SSB", "ALL"};
   int modeCount = 9;
@@ -18733,7 +19013,7 @@ static void handlePskModeSelectorTouch(uint16_t x, uint16_t y) {
   int startX = 60, startY = 120;
   int cols = 4;
   
-  // Sprawdź przyciski trybów
+  // SprawdĹş przyciski trybĂłw
   for (int i = 0; i < modeCount; i++) {
     int col = i % cols;
     int row = i / cols;
@@ -18746,7 +19026,7 @@ static void handlePskModeSelectorTouch(uint16_t x, uint16_t y) {
       } else {
         pskTempMode = modes[i];
       }
-      pskActiveField = PSK_FIELD_BAND_SELECT; // Otwórz wybór pasma po wyborze trybu
+      pskActiveField = PSK_FIELD_BAND_SELECT; // OtwĂłrz wybĂłr pasma po wyborze trybu
       drawPskSettingsMenu();
       return;
     }
@@ -18759,27 +19039,27 @@ static void handlePskModeSelectorTouch(uint16_t x, uint16_t y) {
   }
 }
 
-// Obsługa dotyku - główna funkcja
+// ObsĹ‚uga dotyku - gĹ‚Ăłwna funkcja
 void handlePskMapTouch(uint16_t x, uint16_t y) {
-  // Obsługa menu jeśli otwarte
+  // ObsĹ‚uga menu jeĹ›li otwarte
   if (pskMapMenuOpen) {
-    // Jeśli aktywna klawiatura
+    // JeĹ›li aktywna klawiatura
     if (pskActiveField == PSK_FIELD_KEYBOARD) {
       handlePskKeyboardTouch(x, y);
       return;
     }
-    // Jeśli aktywny selektor pasm
+    // JeĹ›li aktywny selektor pasm
     if (pskActiveField == PSK_FIELD_BAND_SELECT) {
       handlePskBandSelectorTouch(x, y);
       return;
     }
-    // Jeśli aktywny selektor trybów
+    // JeĹ›li aktywny selektor trybĂłw
     if (pskActiveField == PSK_FIELD_MODE_SELECT) {
       handlePskModeSelectorTouch(x, y);
       return;
     }
     
-    // Sprawdź czy dotknięto przycisk ZAPISZ (100,210,80,30)
+    // SprawdĹş czy dotkniÄ™to przycisk ZAPISZ (100,210,80,30)
     Serial.printf("[PSK] Checking ZAPISZ button at x=%d, y=%d, pskMapMenuOpen=%d\n", x, y, pskMapMenuOpen);
     if (x >= 100 && x < 180 && y >= 210 && y < 240) {
       Serial.println("[PSK] ZAPISZ button pressed!");
@@ -18788,6 +19068,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       pskFilterBand = pskTempBand;
       pskFilterMode = pskTempMode;
       pskMaxSpots = pskTempMaxSpots;
+      pskReportDays = pskTempReportDays;
       pskMqttEnabled = pskTempMqttEnabled;
       pskMqttServer = pskTempMqttServer;
       pskMqttCallsign = pskTempMqttCallsign;
@@ -18799,6 +19080,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       preferences->putString("psk_band", pskFilterBand);
       preferences->putString("psk_mode", pskFilterMode);
       preferences->putInt("psk_maxspots", pskMaxSpots);
+      preferences->putInt("psk_report_days", pskReportDays);
       preferences->putBool("psk_mqtt_en", pskMqttEnabled);
       preferences->putString("psk_mqtt_srv", pskMqttServer);
       preferences->putString("psk_mqtt_call", pskMqttCallsign);
@@ -18806,13 +19088,14 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       pskActiveField = PSK_FIELD_NONE;
       Serial.printf("[PSK] pskMapMenuOpen set to: %d\n", pskMapMenuOpen);
       Serial.println("[PSK] Closing menu and redrawing map...");
-      // Zresetuj timer - dane pobiorą się automatycznie przy następnym odświeżeniu (nie blokuj UI)
-      lastPskFetchMs = 0;
+      // Fetchuj dane natychmiast po zapisaniu ustawien
       Serial.printf("[PSK] Before drawPskMap, pskMapMenuOpen=%d\n", pskMapMenuOpen);
+      fetchPskReporterData();
+      lastPskFetchMs = millis();
       drawPskMap();
       Serial.printf("[PSK] After drawPskMap, pskMapMenuOpen=%d\n", pskMapMenuOpen);
       Serial.println("[PSK] Map redrawn, menu should be closed");
-      // Wyświetl potwierdzenie zapisu
+      // WyĹ›wietl potwierdzenie zapisu
       tft.fillRect(140, 130, 200, 40, TFT_GREEN);
       tft.drawRect(140, 130, 200, 40, TFT_WHITE);
       tft.setTextColor(TFT_BLACK);
@@ -18820,10 +19103,10 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       tft.setCursor(170, 143);
       tft.print("ZAPISANO!");
       delay(1000);
-      drawPskMap();  // Odśwież ponownie aby usunąć napis
+      drawPskMap();  // OdĹ›wieĹĽ ponownie aby usunÄ…Ä‡ napis
       return;
     }
-    // Sprawdź czy dotknięto przycisk ANULUJ (300,210,80,30)
+    // SprawdĹş czy dotkniÄ™to przycisk ANULUJ (300,210,80,30)
     if (x >= 300 && x < 380 && y >= 210 && y < 240) {
       Serial.println("[PSK] ANULUJ button pressed!");
       pskMapMenuOpen = false;
@@ -18831,45 +19114,52 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       drawPskMap();
       return;
     }
-    // Sprawdź czy dotknięto pole ZNAK (120,85,100,20) - otwórz klawiaturę
+    // SprawdĹş czy dotkniÄ™to pole ZNAK (120,85,100,20) - otwĂłrz klawiaturÄ™
     if (x >= 120 && x < 220 && y >= 85 && y < 105) {
       pskKeyboardTarget = 1; // 1 = znak
       pskKeyboardBuffer = pskTempReceiver;
       pskActiveField = PSK_FIELD_KEYBOARD;
-      pskKeyboardActive = true;  // Blokuj nawigację
+      pskKeyboardActive = true;  // Blokuj nawigacjÄ™
       drawPskSettingsMenu();
       return;
     }
-    // Sprawdź czy dotknięto pole PASMO (300,85,80,20) - otwórz selektor pasm
+    // SprawdĹş czy dotkniÄ™to pole PASMO (300,85,80,20) - otwĂłrz selektor pasm
     if (x >= 300 && x < 380 && y >= 85 && y < 105) {
       pskActiveField = PSK_FIELD_BAND_SELECT;
       drawPskSettingsMenu();
       return;
     }
-    // Sprawdź czy dotknięto pole TRYB (120,115,100,20) - otwórz selektor trybów
+    // SprawdĹş czy dotkniÄ™to pole TRYB (120,115,100,20) - otwĂłrz selektor trybĂłw
     if (x >= 120 && x < 220 && y >= 115 && y < 135) {
       pskActiveField = PSK_FIELD_MODE_SELECT;
       drawPskSettingsMenu();
       return;
     }
-    // Sprawdź czy dotknięto pole MAX (300,115,50,20) - otwórz klawiaturę
+    // SprawdĹş czy dotkniÄ™to pole MAX (300,115,50,20) - otwĂłrz klawiaturÄ™
     if (x >= 300 && x < 350 && y >= 115 && y < 135) {
       pskKeyboardTarget = 2; // 2 = max
       pskKeyboardBuffer = String(pskTempMaxSpots);
       pskActiveField = PSK_FIELD_KEYBOARD;
-      pskKeyboardActive = true;  // Blokuj nawigację
+      pskKeyboardActive = true;  // Blokuj nawigacjÄ™
       drawPskSettingsMenu();
       return;
     }
-    // Sprawdź czy dotknięto pole TRYB MQTT (120,145,100,20)
+    // SprawdĹş czy dotkniÄ™to pole TRYB MQTT (120,145,100,20)
     if (x >= 120 && x < 220 && y >= 145 && y < 165) {
       pskTempMqttEnabled = !pskTempMqttEnabled;
       pskActiveField = PSK_FIELD_NONE;
       drawPskSettingsMenu();
       return;
     }
+    // SprawdĹş czy dotkniÄ™to pole DNI (290,145,60,20) - cykl 1/2/3
+    if (!pskTempMqttEnabled && x >= 290 && x < 350 && y >= 145 && y < 165) {
+      pskTempReportDays++;
+      if (pskTempReportDays > 3) pskTempReportDays = 1;
+      drawPskSettingsMenu();
+      return;
+    }
     
-    // Sprawdź czy dotknięto pole MQTT SERWER (300,145,120,20) - tylko gdy MQTT
+    // SprawdĹş czy dotkniÄ™to pole MQTT SERWER (300,145,120,20) - tylko gdy MQTT
     if (pskTempMqttEnabled && x >= 300 && x < 420 && y >= 145 && y < 165) {
       pskKeyboardTarget = 3; // 3 = mqtt server
       pskKeyboardBuffer = pskTempMqttServer;
@@ -18879,7 +19169,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       return;
     }
     
-    // Sprawdź czy dotknięto pole MQTT ZNAK (140,175,100,20) - tylko gdy MQTT
+    // SprawdĹş czy dotkniÄ™to pole MQTT ZNAK (140,175,100,20) - tylko gdy MQTT
     if (pskTempMqttEnabled && x >= 140 && x < 240 && y >= 175 && y < 195) {
       pskKeyboardTarget = 4; // 4 = mqtt callsign
       pskKeyboardBuffer = pskTempMqttCallsign;
@@ -18889,7 +19179,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
       return;
     }
     
-    // Jeśli dotknięto poza polem menu, zamknij menu
+    // JeĹ›li dotkniÄ™to poza polem menu, zamknij menu
     if (!(x >= 40 && x < 440 && y >= 40 && y < 270)) {
       pskMapMenuOpen = false;
       pskActiveField = PSK_FIELD_NONE;
@@ -18898,7 +19188,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
     return;
   }
   
-  // Sprawdź czy dotknięto przycisk menu (2,2,30,26)
+  // SprawdĹş czy dotkniÄ™to przycisk menu (2,2,30,26)
   if (x >= 2 && x < 32 && y >= 2 && y < 28) {
     Serial.println("[PSK] Menu button pressed - opening menu");
     pskMapMenuOpen = true;
@@ -18908,6 +19198,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
     pskTempBand = pskFilterBand;
     pskTempMode = pskFilterMode;
     pskTempMaxSpots = pskMaxSpots;
+    pskTempReportDays = pskReportDays;
     pskTempMqttEnabled = pskMqttEnabled;
     pskTempMqttServer = pskMqttServer;
     pskTempMqttCallsign = pskMqttCallsign;
@@ -18915,7 +19206,7 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
     return;
   }
   
-  // Najpierw sprawdź rogi ekranu (przełączanie ekranów) - MUSI być przed mapą!
+  // Najpierw sprawdĹş rogi ekranu (przeĹ‚Ä…czanie ekranĂłw) - MUSI byÄ‡ przed mapÄ…!
   const uint16_t cornerY = 280, cornerX = 80;  // Podniesione Y dla mapy 320px
   if (y >= cornerY && x < cornerX) {
     currentScreen = getNextScreenId(currentScreen);
@@ -18929,10 +19220,11 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
     return;
   }
   
-  // Dotknięcie mapy odświeża dane (ale tylko jeśli nie w rogach)
+  // DotkniÄ™cie mapy odĹ›wieĹĽa dane (ale tylko jeĹ›li nie w rogach)
   if (x >= MAP_DISPLAY_X && x < MAP_DISPLAY_X + MAP_DISPLAY_W &&
       y >= MAP_DISPLAY_Y && y < MAP_DISPLAY_Y + MAP_DISPLAY_H) {
-    lastPskFetchMs = 0;
+    fetchPskReporterData();
+    lastPskFetchMs = millis();
     drawPskMap();
     return;
   }
@@ -18941,159 +19233,632 @@ void handlePskMapTouch(uint16_t x, uint16_t y) {
 // ========== ISS PASS TRACKING IMPLEMENTATION ==========
 
 void drawIssIconProcedural(int16_t x, int16_t y, uint32_t color) {
-  // x, y to środek pozycji stacji na mapie/radarze
-  // 1. Panele słoneczne (lewy i prawy) - dwa pionowe prostokąty
+  // x, y to Ĺ›rodek pozycji stacji na mapie/radarze
+  // 1. Panele sĹ‚oneczne (lewy i prawy) - dwa pionowe prostokÄ…ty
   tft.fillRect(x - 12, y - 8, 4, 16, TFT_CYAN);
   tft.fillRect(x + 8, y - 8, 4, 16, TFT_CYAN);
-  // 2. Kratownica łącząca panele - pozioma linia
+  // 2. Kratownica Ĺ‚Ä…czÄ…ca panele - pozioma linia
   tft.drawFastHLine(x - 8, y, 16, TFT_SILVER);
-  // 3. Moduł centralny (kadłub stacji) - mały poziomy prostokąt
+  // 3. ModuĹ‚ centralny (kadĹ‚ub stacji) - maĹ‚y poziomy prostokÄ…t
   tft.fillRect(x - 4, y - 3, 8, 6, color);
-  tft.drawPixel(x, y, TFT_RED); // Czerwony punkt środkowy
+  tft.drawPixel(x, y, TFT_RED); // Czerwony punkt Ĺ›rodkowy
+}
+
+// Pobiera aktualny zestaw TLE (dane orbitalne) ISS z Celestrak i
+// inicjalizuje propagator SGP4 (issSat). Zwraca true przy sukcesie.
+// TLE trzeba odĹ›wieĹĽaÄ‡ co jakiĹ› czas (co kilka godzin) - im starszy TLE,
+// tym wiÄ™kszy bĹ‚Ä…d propagacji; dla ISS (ktĂłry regularnie koryguje orbitÄ™)
+// dokĹ‚adnoĹ›Ä‡ zauwaĹĽalnie spada juĹĽ po 1-2 dniach.
+bool fetchIssTLE() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  static WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  // CATNR=25544 to numer NORAD MiÄ™dzynarodowej Stacji Kosmicznej (ISS).
+  String url = "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE";
+  http.begin(client, url);
+  http.setTimeout(4000);
+  http.addHeader("User-Agent", "ESP32-HAM-CLOCK/1.3 (TLE fetch)");
+  int httpCode = http.GET();
+
+  bool ok = false;
+  if (httpCode == 200) {
+    String payload = http.getString();
+    // OdpowiedĹş to 3 linie: nazwa satelity, TLE linia 1, TLE linia 2.
+    int firstNl = payload.indexOf('\n');
+    int secondNl = payload.indexOf('\n', firstNl + 1);
+    int thirdNl = payload.indexOf('\n', secondNl + 1);
+    if (firstNl > 0 && secondNl > firstNl) {
+      String nameLine = payload.substring(0, firstNl);
+      String l1 = payload.substring(firstNl + 1, secondNl);
+      String l2 = (thirdNl > secondNl) ? payload.substring(secondNl + 1, thirdNl)
+                                        : payload.substring(secondNl + 1);
+      nameLine.trim();
+      l1.trim();
+      l2.trim();
+      if (l1.startsWith("1 ") && l2.startsWith("2 ") && l1.length() >= 60 && l2.length() >= 60) {
+        if (issTleMutex != NULL && xSemaphoreTake(issTleMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+          if (nameLine.length() > 0) {
+            nameLine.toCharArray(issTleName, sizeof(issTleName));
+          }
+          l1.toCharArray(issTleLine1, sizeof(issTleLine1));
+          l2.toCharArray(issTleLine2, sizeof(issTleLine2));
+          issSat.init(issTleName, issTleLine1, issTleLine2);
+          issTleValid = true;
+          xSemaphoreGive(issTleMutex);
+          ok = true;
+          Serial.println("[ISS TLE] Zaktualizowano dane orbitalne (SGP4)");
+        }
+      } else {
+        Serial.println("[ISS TLE] Nieprawidlowy format odpowiedzi");
+      }
+    } else {
+      Serial.println("[ISS TLE] Nieoczekiwany format odpowiedzi (za malo linii)");
+    }
+  } else {
+    Serial.printf("[ISS TLE] HTTP kod: %d (oczekiwano 200)\n", httpCode);
+  }
+  http.end();
+  return ok;
 }
 
 void calculateIssTrajectory() {
-  // Calculate future ISS positions for trajectory display
-  // Using simplified orbital mechanics (circular orbit approximation)
-  // ISS orbital period is approximately 90 minutes (5400 seconds)
-  const double orbitalPeriod = 5400.0; // seconds
-  const double timeStep = 120.0; // 2 minutes per point
+  // Calculate future ISS ground-track positions, then project each one onto
+  // the polar radar (relative to the observer's location) using the SAME
+
+  // azimuth/distance math as the satellite icon in updateIssDynamicDisplay().
+  //
+  // NOTE: this used to project the points with a world-map Mercator formula
+  // (screen X/Y as if displaying a 480x320 world map), which is a totally
+  // different coordinate space than the polar radar centered at
+  // (issCx, issCy). Drawing those coordinates directly onto the radar
+  // produced essentially arbitrary line segments scattered across the
+  // screen, and since nothing ever cleared them, they accumulated into an
+  // ever-growing scribble every refresh cycle.
+  //
+  // The lat/lng propagation ALSO used to be a rough sinusoidal guess
+  // ("ISS moves ~15 degrees per minute in longitude"), which is roughly 3-4x
+  // too fast (real ground-track drift is closer to 4-6 deg/min depending on
+  // latitude). That made the projected points shoot past the radar's
+  // 5000km range within the very first ~2 minute step, so nothing was ever
+  // drawn. Now we use the REAL measured bearing (heading) between the last
+  // two actual position fixes plus the reported ground speed, and propagate
+  // along a great-circle path - accurate for the next ~15-20 minutes, which
+  // is all that matters for a 5000km-range radar.
   const int points = ISS_TRAJECTORY_POINTS;
-  
+  const double timeStep = 120.0; // 2 minutes per point
+  const double R = 6371.0;       // Earth radius in km
+
+  double userLatLocal = userLatLonValid ? userLat : 52.40;
+  double userLonLocal = userLatLonValid ? userLon : 16.92;
+  double home_lat = userLatLocal * DEG_TO_RAD;
+  double home_lon = userLonLocal * DEG_TO_RAD;
+
+  if (!issGroundBearingValid) {
+    // Not enough data yet (need at least two real fixes) - leave the whole
+    // trajectory marked invalid rather than guessing.
+    for (int i = 0; i < points; i++) {
+      issTrajectoryX[i] = -1;
+      issTrajectoryY[i] = -1;
+    }
+    return;
+  }
+
+  // issSpeed is the orbital speed reported by the API (km/h) at ISS's
+  // actual altitude; the GROUND-track speed is slightly less (the point
+  // directly below traces a smaller circle than the orbit itself), scaled
+  // by R_earth / (R_earth + altitude).
+  double altitudeRatio = R / (R + issAltitude);
+  double groundSpeedKmS = (issSpeed / 3600.0) * altitudeRatio;
+  double bearingRad = issGroundBearingDeg * DEG_TO_RAD;
+  double lat1 = issLat * DEG_TO_RAD;
+  double lon1 = issLng * DEG_TO_RAD;
+
   for (int i = 0; i < points; i++) {
-    double futureTime = timeStep * (i + 1); // seconds in future
-    double angle = (futureTime / orbitalPeriod) * 2.0 * PI; // orbital angle
-    
-    // Simple circular orbit approximation
-    // ISS moves approximately 15 degrees per minute in longitude
-    double deltaLng = (futureTime / 60.0) * 15.0 * cos(issLat * DEG_TO_RAD);
-    double deltaLat = (futureTime / 60.0) * 0.5 * sin(angle); // Latitude oscillation
-    
-    issTrajectoryLat[i] = issLat + deltaLat;
-    issTrajectoryLng[i] = issLng + deltaLng;
-    
-    // Wrap longitude to -180 to 180 range
-    if (issTrajectoryLng[i] > 180.0) issTrajectoryLng[i] -= 360.0;
-    if (issTrajectoryLng[i] < -180.0) issTrajectoryLng[i] += 360.0;
-    
-    // Clamp latitude to -90 to 90 range
-    if (issTrajectoryLat[i] > 90.0) issTrajectoryLat[i] = 90.0;
-    if (issTrajectoryLat[i] < -90.0) issTrajectoryLat[i] = -90.0;
-    
-    // Convert to screen coordinates using Mercator projection
-    // X = (480 * (Lon + 180)) / 360
-    // Y = (320 * (90 - Lat)) / 180
-    issTrajectoryX[i] = (int)((480.0 * (issTrajectoryLng[i] + 180.0)) / 360.0);
-    issTrajectoryY[i] = (int)((320.0 * (90.0 - issTrajectoryLat[i])) / 180.0);
-    
-    // Clamp to screen bounds
-    if (issTrajectoryX[i] < 0) issTrajectoryX[i] = 0;
-    if (issTrajectoryX[i] > 479) issTrajectoryX[i] = 479;
-    if (issTrajectoryY[i] < 0) issTrajectoryY[i] = 0;
-    if (issTrajectoryY[i] > 319) issTrajectoryY[i] = 319;
+    double futureTime = timeStep * (i + 1); // sekundy w przyszĹ‚oĹ›Ä‡
+    double d = groundSpeedKmS * futureTime;  // km przebyte
+    double angularDist = d / R;              // radiany
+
+    // Standardowy wzĂłr geodezyjny "punkt docelowy dla danego startu,
+    // namiaru i odlegĹ‚oĹ›ci" (great-circle destination point).
+    double lat2 = asin(sin(lat1) * cos(angularDist) +
+                        cos(lat1) * sin(angularDist) * cos(bearingRad));
+    double lon2 = lon1 + atan2(sin(bearingRad) * sin(angularDist) * cos(lat1),
+                                cos(angularDist) - sin(lat1) * sin(lat2));
+
+    double futLat = lat2 * RAD_TO_DEG;
+    double futLng = lon2 * RAD_TO_DEG;
+    while (futLng > 180.0) futLng -= 360.0;
+    while (futLng < -180.0) futLng += 360.0;
+    if (futLat > 90.0) futLat = 90.0;
+    if (futLat < -90.0) futLat = -90.0;
+
+    issTrajectoryLat[i] = futLat;
+    issTrajectoryLng[i] = futLng;
+
+    // Distance + bearing from the observer to this future ground-track
+    // point (same Haversine/bearing formulas used for the live ISS
+    // position in fetchIssData()).
+    double p_lat = futLat * DEG_TO_RAD;
+    double p_lon = futLng * DEG_TO_RAD;
+    double dLat = p_lat - home_lat;
+    double dLon = p_lon - home_lon;
+    double a = sin(dLat / 2) * sin(dLat / 2) +
+               cos(home_lat) * cos(p_lat) * sin(dLon / 2) * sin(dLon / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    double dist = R * c;
+
+    double y = sin(dLon) * cos(p_lat);
+    double x = cos(home_lat) * sin(p_lat) - sin(home_lat) * cos(p_lat) * cos(dLon);
+    double az = atan2(y, x) * RAD_TO_DEG;
+    if (az < 0) az += 360;
+
+    if (dist <= 5000.0) {
+      // Same polar projection as the satellite icon: distance -> radius,
+      // azimuth -> angle around the radar (0Â° = North, up).
+      double pixelDist = dist * (issRMax / 5000.0);
+      double angleRad = (az - 90.0) * DEG_TO_RAD;
+      issTrajectoryX[i] = issCx + (int)(cos(angleRad) * pixelDist);
+      issTrajectoryY[i] = issCy + (int)(sin(angleRad) * pixelDist);
+    } else {
+      // Out of radar range - mark invalid so the draw loop stops here
+      // instead of plotting it somewhere meaningless.
+      issTrajectoryX[i] = -1;
+      issTrajectoryY[i] = -1;
+    }
   }
 }
+
+// Uwaga: nie potrzebujemy konwersji na dzieĹ„ juliaĹ„ski - Sgp4::findsat()
+// ma przeciÄ…ĹĽenie przyjmujÄ…ce bezpoĹ›rednio unix time (unsigned long),
+// wiÄ™c uĹĽywamy go wprost.
+
+// Prawdziwa trajektoria ISS z propagacji orbity (SGP4) zamiast przybliĹĽenia
+// namiar+prÄ™dkoĹ›Ä‡ - dokĹ‚adna tak dĹ‚ugo jak aktualny jest pobrany TLE
+// (patrz fetchIssTLE(), odĹ›wieĹĽane co ISS_TLE_REFRESH_MS).
+void calculateIssTrajectorySGP4() {
+  if (issTleMutex == NULL || xSemaphoreTake(issTleMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+    return; // nie blokuj - sprĂłbujemy w nastÄ™pnym cyklu
+  }
+  if (!issTleValid) {
+    xSemaphoreGive(issTleMutex);
+    for (int i = 0; i < ISS_TRAJECTORY_POINTS; i++) {
+      issTrajectoryX[i] = -1;
+      issTrajectoryY[i] = -1;
+    }
+    return;
+  }
+
+  double userLatLocal = userLatLonValid ? userLat : 52.40;
+  double userLonLocal = userLatLonValid ? userLon : 16.92;
+  issSat.site(userLatLocal, userLonLocal, 0.0); // wysokoĹ›Ä‡ obserwatora ~pomijalna dla tej odlegĹ‚oĹ›ci
+
+  time_t nowEpoch = time(nullptr);
+  const double timeStepSec = 60.0; // co 1 minutÄ™ - SGP4 jest tani obliczeniowo, wiÄ™c gÄ™Ĺ›ciej niĹĽ poprzednio
+
+  for (int i = 0; i < ISS_TRAJECTORY_POINTS; i++) {
+    time_t t = nowEpoch + (time_t)(timeStepSec * (i + 1));
+    issSat.findsat((unsigned long)t);
+    issTrajectoryLat[i] = issSat.satLat;
+    issTrajectoryLng[i] = issSat.satLon;
+
+    double dist = issSat.satDist; // km od obserwatora (Sgp4 liczy to samo od razu, po site())
+    double az = issSat.satAz;     // stopnie
+
+    if (dist <= 5000.0) {
+      double pixelDist = dist * (issRMax / 5000.0);
+      double angleRad = (az - 90.0) * DEG_TO_RAD;
+      issTrajectoryX[i] = issCx + (int)(cos(angleRad) * pixelDist);
+      issTrajectoryY[i] = issCy + (int)(sin(angleRad) * pixelDist);
+    } else {
+      issTrajectoryX[i] = -1;
+      issTrajectoryY[i] = -1;
+    }
+
+    // Dodatkowy margines bezpieczeĹ„stwa przeciw watchdogowi - 45 wywoĹ‚aĹ„
+    // SGP4 to znacznie mniej niĹĽ w skanowaniu przelotu, ale to i tak
+    // dodatkowe obciÄ…ĹĽenie w tym samym 5-sekundowym cyklu co pobieranie
+    // pozycji przez HTTPS.
+    if (i % 15 == 14) {
+      vTaskDelay(1);
+    }
+  }
+
+  xSemaphoreGive(issTleMutex);
+}
+
+// Pobiera czas nastÄ™pnego przelotu ISS z n2yo.com (jeĹ›li skonfigurowano
+// klucz API w ustawieniach WWW). To DUĹ»O prostsze i bardziej niezawodne
+// niĹĽ liczenie tego samemu przez SGP4 na ESP32 - przewidywanie przelotĂłw
+// robi ich serwer, my tylko odczytujemy gotowy wynik. Zwraca true przy
+// sukcesie (i ustawia issNextPassEstimateEpoch/Valid).
+bool fetchIssNextPassFromN2yo() {
+  if (n2yoApiKey.length() == 0 || WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  double userLatLocal = userLatLonValid ? userLat : 52.40;
+  double userLonLocal = userLatLonValid ? userLon : 16.92;
+
+  static WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  // radiopasses (nie visualpasses) - nie wymaga, ĹĽeby ISS byĹ‚ oĹ›wietlony
+  // sĹ‚oĹ„cem/obserwator w ciemnoĹ›ci, tylko elewacji > min_elevation.
+  // Parametry: {id}/{lat}/{lng}/{alt}/{dni}/{min_elevacja}
+  String url = "https://api.n2yo.com/rest/v1/satellite/radiopasses/25544/" +
+               String(userLatLocal, 4) + "/" + String(userLonLocal, 4) + "/0/2/5/" +
+               "&apiKey=" + n2yoApiKey;
+  http.begin(client, url);
+  http.setTimeout(4000);
+  int httpCode = http.GET();
+
+  bool ok = false;
+  if (httpCode == 200) {
+    WiFiClient *stream = http.getStreamPtr();
+
+    DynamicJsonDocument filter(128);
+    filter["passes"][0]["startUTC"] = true;
+
+    DynamicJsonDocument doc(1024);
+    DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
+
+    if (!err) {
+      JsonArray passes = doc["passes"].as<JsonArray>();
+      if (passes.size() > 0) {
+        long startUTC = passes[0]["startUTC"] | 0L;
+        if (startUTC > 0) {
+          issNextPassEstimateEpoch = (time_t)startUTC;
+          issNextPassEstimateValid = true;
+          ok = true;
+          struct tm passTm;
+          time_t t = issNextPassEstimateEpoch;
+          localtime_r(&t, &passTm);
+          Serial.printf("[ISS PASS n2yo] Nastepny przelot: %02d:%02d\n", passTm.tm_hour, passTm.tm_min);
+        }
+      } else {
+        Serial.println("[ISS PASS n2yo] Brak przelotow w zwroconym oknie (2 dni)");
+      }
+    } else {
+      Serial.printf("[ISS PASS n2yo] Blad parsowania JSON: %s\n", err.c_str());
+    }
+  } else {
+    Serial.printf("[ISS PASS n2yo] HTTP kod: %d (oczekiwano 200)\n", httpCode);
+  }
+  http.end();
+  return ok;
+}
+
+// Przewiduje czas nastÄ™pnego przelotu (AOS - wschĂłd nad horyzontem, elewacja
+// przekracza 0Â°) skanujÄ…c orbitÄ™ do przodu z pomocÄ… SGP4. JeĹ›li ISS jest
+// AKTUALNIE widoczny, najpierw znajduje koniec bieĹĽÄ…cego przelotu (LOS),
+// dopiero potem szuka kolejnego AOS - ĹĽeby nie zwrĂłciÄ‡ "teraz" jako
+// nastÄ™pnego przelotu. DokĹ‚adnoĹ›Ä‡ jest ograniczona Ĺ›wieĹĽoĹ›ciÄ… TLE (patrz
+// fetchIssTLE()), ale to i tak duĹĽo precyzyjniejsze niĹĽ zgadywanie po
+// samym okresie orbitalnym.
+void updateIssNextPassEstimate() {
+  Serial.println("[ISS PASS] Start szukania nastepnego przelotu...");
+  if (issTleMutex == NULL || xSemaphoreTake(issTleMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+    Serial.println("[ISS PASS] Nie udalo sie wziac muteksu TLE - pomijam ten cykl");
+    return;
+  }
+  if (!issTleValid) {
+    xSemaphoreGive(issTleMutex);
+    issNextPassEstimateValid = false;
+    Serial.println("[ISS PASS] TLE jeszcze niedostepne - brak danych");
+    return;
+  }
+
+  double userLatLocal = userLatLonValid ? userLat : 52.40;
+  double userLonLocal = userLatLonValid ? userLon : 16.92;
+  issSat.site(userLatLocal, userLonLocal, 0.0);
+
+  time_t nowEpoch = time(nullptr);
+  const int coarseStepSec = 60; // byĹ‚o 30 - dwa razy mniej iteracji
+  const int maxScanSec = 6 * 3600; // szukaj maksymalnie 6h do przodu
+
+  issSat.findsat((unsigned long)nowEpoch);
+  Serial.printf("[ISS PASS] Diagnostyka SGP4: satLat=%.4f satLon=%.4f satAz=%.4f satEl=%.4f satDist=%.1f (obserwator: lat=%.4f lon=%.4f)\n",
+                issSat.satLat, issSat.satLon, issSat.satAz, issSat.satEl, issSat.satDist,
+                userLatLocal, userLonLocal);
+  Serial.printf("[ISS PASS] Dla porownania, pozycja z wheretheiss.at: lat=%.4f lon=%.4f\n", issLat, issLng);
+  bool wasVisible = issSat.satEl > 0;
+
+  time_t prevT = nowEpoch;
+  double prevEl = issSat.satEl;
+  bool found = false;
+  time_t aosCoarseT = 0;
+  int iterCount = 0;
+
+  for (int s = coarseStepSec; s <= maxScanSec; s += coarseStepSec) {
+    time_t t = nowEpoch + s;
+    issSat.findsat((unsigned long)t);
+    double el = issSat.satEl;
+
+    // KRYTYCZNE: to jest pÄ™tla do 360 iteracji SGP4 pod rzÄ…d. Bez oddania
+    // sterowania systemowi ESP32-owy Task Watchdog Timer (domyĹ›lnie 5s)
+    // uznaje, ĹĽe zadanie siÄ™ zawiesiĹ‚o i resetuje CAĹE urzÄ…dzenie - co
+    // dokĹ‚adnie pasowaĹ‚o do zgĹ‚oszonych, cyklicznych restartĂłw (mniej
+    // wiÄ™cej co 5 minut, czyli dokĹ‚adnie tak czÄ™sto jak wywoĹ‚ywana jest ta
+    // funkcja). KrĂłtki yield co kilkanaĹ›cie iteracji rozwiÄ…zuje problem
+    // bez realnego spowolnienia wyniku.
+    if (++iterCount % 15 == 0) {
+      vTaskDelay(1);
+    }
+
+    if (wasVisible) {
+      // Czekamy aĹĽ bieĹĽÄ…cy przelot siÄ™ skoĹ„czy (LOS: elewacja spada < 0),
+      // dopiero wtedy zaczynamy szukaÄ‡ KOLEJNEGO wschodu.
+      if (el <= 0) {
+        wasVisible = false;
+      }
+    } else if (prevEl <= 0 && el > 0) {
+      // Znaleziono przejĹ›cie przez horyzont w gĂłrÄ™ (AOS) - dopracuj metodÄ…
+      // poĹ‚owienia przedziaĹ‚u (bisekcja) miÄ™dzy prevT a t dla dokĹ‚adniejszego czasu.
+      time_t lo = prevT, hi = t;
+      for (int iter = 0; iter < 12; iter++) {
+        time_t mid = lo + (hi - lo) / 2;
+        issSat.findsat((unsigned long)mid);
+        if (issSat.satEl > 0) {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      aosCoarseT = hi;
+      found = true;
+      break;
+    }
+
+    prevT = t;
+    prevEl = el;
+  }
+
+  xSemaphoreGive(issTleMutex);
+
+  if (found) {
+    issNextPassEstimateEpoch = aosCoarseT;
+    issNextPassEstimateValid = true;
+    struct tm passTm;
+    localtime_r(&aosCoarseT, &passTm);
+    Serial.printf("[ISS PASS] Znaleziono nastepny przelot o %02d:%02d (za %ld s, iteracji: %d)\n",
+                  passTm.tm_hour, passTm.tm_min, (long)(aosCoarseT - nowEpoch), iterCount);
+  } else {
+    issNextPassEstimateValid = false;
+    Serial.printf("[ISS PASS] Brak przelotu w oknie %d godzin (lat=%.4f lon=%.4f, iteracji: %d)\n",
+                  maxScanSec / 3600, userLatLocal, userLonLocal, iterCount);
+  }
+}
+
 
 void fetchIssData() {
   if (WiFi.status() != WL_CONNECTED) {
     // Skip HTTP request but continue - allow existing data to be displayed
     // Do NOT return - this would block the entire ISS data loop
-  } else {
+    return;
+  }
+
+  double userLatLocal = userLatLonValid ? userLat : 52.40;
+  double userLonLocal = userLatLonValid ? userLon : 16.92;
+
+  bool gotPosition = false;
+  double newLat = 0, newLng = 0, newAlt = 0, newSpeed = 0;
+
+  // Static WiFiClientSecure - reuse zamiast tworzyc nowy za kazdym razem.
+  // Nowy WiFiClientSecure = nowy kontekst TLS (~20KB) za kazdym wywolaniem,
+  // co przy krotkim interwale wyczerpywalo pamiec ESP32 i crashowalo.
+  static WiFiClientSecure issSecureClient;
+  issSecureClient.setInsecure();
+
+  // Jesli klucz n2yo jest dostepny, uzyj ich API do pozycji ISS
+  if (n2yoApiKey.length() > 0) {
+    HTTPClient http;
+    http.setTimeout(4000);
+    String url = "https://api.n2yo.com/rest/v1/satellite/positions/25544/" +
+                 String(userLatLocal, 4) + "/" + String(userLonLocal, 4) + "/0/1/&apiKey=" + n2yoApiKey;
+    Serial.printf("[ISS] Pobieram pozycje z n2yo.com...\n");
+    http.begin(issSecureClient, url);
+    int httpCode = http.GET();
+    if (httpCode == 200) {
+      DynamicJsonDocument doc(1024);
+      DeserializationError err = deserializeJson(doc, http.getString());
+      if (!err && doc.containsKey("positions")) {
+        JsonArray positions = doc["positions"].as<JsonArray>();
+        if (positions.size() > 0) {
+          JsonObject pos = positions[0];
+          newLat = pos["satlatitude"] | 0.0;
+          newLng = pos["satlongitude"] | 0.0;
+          newAlt = pos["sataltitude"] | 0.0;
+          gotPosition = true;
+          Serial.printf("[ISS] n2yo pozycja: lat=%.4f lng=%.4f alt=%.1f\n", newLat, newLng, newAlt);
+        }
+      } else {
+        Serial.printf("[ISS] n2yo blad parsowania: %s\n", err.c_str() ? err.c_str() : "unknown");
+      }
+    } else {
+      Serial.printf("[ISS] n2yo HTTP kod: %d\n", httpCode);
+    }
+    http.end();
+  }
+
+  // Fallback na wheretheiss.at jesli n2yo nie dal pozycji
+  if (!gotPosition) {
     HTTPClient http;
     http.setTimeout(2500);
-    http.begin("https://api.wheretheiss.at/v1/satellites/25544");
+    http.begin(issSecureClient, "https://api.wheretheiss.at/v1/satellites/25544");
     int httpCode = http.GET();
-
     if (httpCode == 200) {
-      String payload = http.getString();
       DynamicJsonDocument doc(1024);
-      DeserializationError err = deserializeJson(doc, payload);
-
+      DeserializationError err = deserializeJson(doc, http.getString());
       if (!err) {
-        issLat = doc["latitude"];
-        issLng = doc["longitude"];
-        issAltitude = doc["altitude"];
-        issSpeed = doc["velocity"];
-        issCountry = "CZEKAJ..."; // Will be updated by getIssCountryFromCoords
-
-        // Calculate trajectory after fetching position
-        calculateIssTrajectory();
-
-        // Calculate observation data after fetching position
-        // Simple calculation using Haversine formula
-        double userLatLocal = userLatLonValid ? userLat : 52.40;
-        double userLonLocal = userLatLonValid ? userLon : 16.92;
-
-        // Convert to radians
-        double home_lat = userLatLocal * DEG_TO_RAD;
-        double iss_lat = issLat * DEG_TO_RAD;
-        double home_lon = userLonLocal * DEG_TO_RAD;
-        double iss_lon = issLng * DEG_TO_RAD;
-
-        // Earth radius in km
-        double R = 6371.0;
-
-        // Haversine formula for distance
-        double dLat = iss_lat - home_lat;
-        double dLon = iss_lon - home_lon;
-        double a = sin(dLat/2) * sin(dLat/2) + cos(home_lat) * cos(iss_lat) * sin(dLon/2) * sin(dLon/2);
-        double c = 2 * atan2(sqrt(a), sqrt(1-a));
-        issDistance = R * c;
-
-        // Calculate azimuth
-        double y = sin(dLon) * cos(iss_lat);
-        double x = cos(home_lat) * sin(iss_lat) - sin(home_lat) * cos(iss_lat) * cos(dLon);
-        issAzimuth = atan2(y, x) * RAD_TO_DEG;
-        if (issAzimuth < 0) issAzimuth += 360;
-
-        // Calculate elevation (simplified)
-        double cos_g = sin(home_lat) * sin(iss_lat) + cos(home_lat) * cos(iss_lat) * cos(dLon);
-        if (cos_g > 1.0) cos_g = 1.0;
-        if (cos_g < -1.0) cos_g = -1.0;
-        double r_iss = R + issAltitude;
-        double num = r_iss * cos_g - R;
-        double den = sqrt(r_iss*r_iss * (1 - cos_g*cos_g));
-        issElevation = atan2(num, sqrt(r_iss*r_iss * (1 - cos_g*cos_g))) * RAD_TO_DEG;
+        newLat = doc["latitude"];
+        newLng = doc["longitude"];
+        newAlt = doc["altitude"];
+        newSpeed = doc["velocity"];
+        gotPosition = true;
+        Serial.printf("[ISS] wheretheiss pozycja: lat=%.4f lng=%.4f\n", newLat, newLng);
       }
     }
     http.end();
   }
+
+  if (gotPosition) {
+    // Namiar (kierunek lotu) z dwoch kolejnych PRAWDZIWYCH odczytow
+    static bool haveIssPrevFix = false;
+    if (haveIssPrevFix && (issLat != newLat || issLng != newLng)) {
+      double lat1r = issLat * DEG_TO_RAD;
+      double lat2r = newLat * DEG_TO_RAD;
+      double dLonR = (newLng - issLng) * DEG_TO_RAD;
+      if (dLonR > PI) dLonR -= 2 * PI;
+      if (dLonR < -PI) dLonR += 2 * PI;
+      double by = sin(dLonR) * cos(lat2r);
+      double bx = cos(lat1r) * sin(lat2r) - sin(lat1r) * cos(lat2r) * cos(dLonR);
+      double bearing = atan2(by, bx) * RAD_TO_DEG;
+      if (bearing < 0) bearing += 360;
+      issGroundBearingDeg = bearing;
+      issGroundBearingValid = true;
+    }
+    haveIssPrevFix = true;
+
+    issLat = newLat;
+    issLng = newLng;
+    issAltitude = newAlt;
+    if (newSpeed > 0) issSpeed = newSpeed;
+
+    // Trajektoria: preferuj SGP4, fallback na bearing+speed
+    if (issTleValid) {
+      calculateIssTrajectorySGP4();
+    } else {
+      calculateIssTrajectory();
+    }
+
+    // Haversine - oblicz obserwacje
+    double home_lat = userLatLocal * DEG_TO_RAD;
+    double iss_lat = issLat * DEG_TO_RAD;
+    double home_lon = userLonLocal * DEG_TO_RAD;
+    double iss_lon = issLng * DEG_TO_RAD;
+    double R = 6371.0;
+
+    double dLat = iss_lat - home_lat;
+    double dLon = iss_lon - home_lon;
+    double a = sin(dLat/2) * sin(dLat/2) + cos(home_lat) * cos(iss_lat) * sin(dLon/2) * sin(dLon/2);
+    double c = 2 * atan2(sqrt(a), sqrt(1-a));
+    issDistance = R * c;
+
+    double y = sin(dLon) * cos(iss_lat);
+    double x = cos(home_lat) * sin(iss_lat) - sin(home_lat) * cos(iss_lat) * cos(dLon);
+    issAzimuth = atan2(y, x) * RAD_TO_DEG;
+    if (issAzimuth < 0) issAzimuth += 360;
+
+    double cos_g = sin(home_lat) * sin(iss_lat) + cos(home_lat) * cos(iss_lat) * cos(dLon);
+    if (cos_g > 1.0) cos_g = 1.0;
+    if (cos_g < -1.0) cos_g = -1.0;
+    double r_iss = R + issAltitude;
+    double num = r_iss * cos_g - R;
+    issElevation = atan2(num, sqrt(r_iss*r_iss * (1 - cos_g*cos_g))) * RAD_TO_DEG;
+  }
 }
 
-void getIssCountryFromCoords(double lat, double lng) {
-  // Default to ocean/no data if WiFi not connected
+String lookupIssCountryFromCoords(double lat, double lng) {
+  // Zwracamy PUSTY string dla PRZEJĹšCIOWYCH niepowodzeĹ„ (brak WiFi, bĹ‚Ä…d
+  // sieci, timeout, bĹ‚Ä…d parsowania) - to sygnaĹ‚ dla wywoĹ‚ujÄ…cego "nic siÄ™
+  // nie zmieniĹ‚o, zachowaj poprzedniÄ… wartoĹ›Ä‡", zamiast nadpisywaÄ‡ dobrze
+  // znanÄ… nazwÄ™ kraju napisem "BRAK DANYCH" przy kaĹĽdej przejĹ›ciowej
+  // usterce sieciowej (a przy tylu jednoczesnych poĹ‚Ä…czeniach na tym
+  // urzÄ…dzeniu pojedyncze niepowodzenia HTTPS sÄ… caĹ‚kiem normalne - to
+  // wĹ‚aĹ›nie powodowaĹ‚o "miganie" miÄ™dzy nazwÄ… kraju a "brak danych").
+  // "OCEAN" i realna nazwa kraju to jedyne wyniki, ktĂłre POWINNY nadpisaÄ‡
+  // poprzedniÄ… wartoĹ›Ä‡, bo sÄ… wynikiem faktycznie udanego zapytania.
   if (WiFi.status() != WL_CONNECTED) {
-    issCountry = "OCEAN / BRAK DANYCH";
-    return; // This is OK - we're just setting the country, not blocking ISS data
+    return "";
   }
+
+  // BigDataCloud's free "reverse-geocode-client" endpoint is restricted by
+  // their Fair Use Policy to genuine browser/GPS clients only - calls from
+  // a server or embedded device (like here, looking up an arbitrary
+  // satellite ground-track position rather than the device's own location)
+  // get rejected outright with HTTP 400, which is exactly what the serial
+  // log showed every single time. OpenStreetMap's Nominatim reverse
+  // geocoding API is free, needs no key, and is fine with this kind of use
+  // as long as we stay around ~1 request/second and identify ourselves via
+  // User-Agent - both easily satisfied here (one lookup every 15s).
+  static WiFiClientSecure client;
+  client.setInsecure();
 
   HTTPClient http;
-  String url = "http://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + String(lat, 4) + "&longitude=" + String(lng, 4) + "&localityLanguage=pl";
+  String langParam = (tftLanguage == TFT_LANG_EN) ? "en" : "pl";
+  String url = "https://nominatim.openstreetmap.org/reverse?format=json&lat=" +
+               String(lat, 4) + "&lon=" + String(lng, 4) +
+               "&zoom=3&accept-language=" + langParam;
 
-  http.begin(url);
-  http.setTimeout(2500); // 2.5 second timeout
+  http.begin(client, url);
+  // 3s timeout, single attempt, no retry - a longer timeout/retry here
+  // ended up starving OTHER concurrent connections (weather, callook) of
+  // the ESP32's shared, limited pool of sockets/TLS memory, since only one
+  // WiFi radio and socket pool is shared across every task on the device.
+  // Keeping this call short and single-shot leaves the rest of the system
+  // room to breathe; a missed lookup here just tries again in 15s anyway.
+  http.setTimeout(3000);
+  http.addHeader("User-Agent", "ESP32-HAM-CLOCK/1.3 (ISS pass tracker)");
   int httpCode = http.GET();
 
+  // Trzy rĂłĹĽne, rozrĂłĹĽnialne wyniki:
+  // - ""            = przejĹ›ciowe niepowodzenie - zachowaj poprzedniÄ… wartoĹ›Ä‡
+  // - "OCEAN"       = zapytanie siÄ™ udaĹ‚o, ale nie ma kraju pod tym punktem
+  // - nazwa kraju   = zapytanie siÄ™ udaĹ‚o i znaleziono kraj
+  String result;
   if (httpCode == 200) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, payload);
+    WiFiClient *stream = http.getStreamPtr();
+
+    // Filtr - interesuje nas wyĹ‚Ä…cznie nazwa kraju; reszta odpowiedzi
+    // Nominatim (adres, granice, id OSM itd.) i tak jest pomijana, wiÄ™c
+    // rozmiar caĹ‚ej odpowiedzi nie ma znaczenia dla maĹ‚ego bufora poniĹĽej.
+    DynamicJsonDocument filter(128);
+    filter["address"]["country"] = true;
+    filter["address"]["country_code"] = true;
+
+    DynamicJsonDocument doc(512);
+    DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
 
     if (!error) {
-      String country = doc["countryName"];
+      // Nad otwartym oceanem Nominatim odpowiada poprawnie (HTTP 200), ale
+      // bez pola "country" w adresie - to jest faktyczny, potwierdzony ocean.
+      String country = doc["address"]["country"] | "";
+      String countryCode = doc["address"]["country_code"] | "";
+      countryCode.toUpperCase();
       if (country.length() > 0) {
-        issCountry = country;
-        issCountry.toUpperCase();
+        country.toUpperCase();
+        result = country;
+        issCountryCode = countryCode; // np. "PL", "DE", "US"
       } else {
-        issCountry = "OCEAN / BRAK DANYCH";
+        result = "OCEAN";
+        issCountryCode = "";
       }
     } else {
-      issCountry = "OCEAN / BRAK DANYCH";
+      result = ""; // przejĹ›ciowy bĹ‚Ä…d parsowania - zachowaj poprzedniÄ… wartoĹ›Ä‡
+      Serial.printf("[ISS COUNTRY] blad parsowania JSON: %s\n", error.c_str());
     }
   } else {
-    issCountry = "OCEAN / BRAK DANYCH";
+    result = ""; // przejĹ›ciowy bĹ‚Ä…d HTTP - zachowaj poprzedniÄ… wartoĹ›Ä‡
+    Serial.printf("[ISS COUNTRY] HTTP kod: %d (oczekiwano 200)\n", httpCode);
   }
   http.end();
+  return result;
+}
+
+// Kept for compatibility with the forward declaration used elsewhere -
+// snapshots the current position under the mutex, performs the (slow,
+// network-bound) lookup WITHOUT holding the mutex, then takes it again only
+// briefly to store the result. See issTask() for why this split matters.
+void getIssCountryFromCoords(double lat, double lng) {
+  String country = lookupIssCountryFromCoords(lat, lng);
+  if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    issCountry = country;
+    xSemaphoreGive(issDataMutex);
+  }
 }
 
 void drawIssStaticInterface() {
@@ -19111,7 +19876,7 @@ void drawIssStaticInterface() {
   tft.drawRoundRect(10, 60, 160, 35, 4, TFT_GREEN);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
   tft.setTextSize(1);
-  tft.drawString("KRAJ POD SATELITĄ:", 15, 65, 1);
+  tft.drawString("KRAJ POD ISS:", 15, 65, 1);
 
   tft.drawRoundRect(10, 105, 140, 35, 4, TFT_GREEN);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
@@ -19146,7 +19911,34 @@ void drawIssStaticInterface() {
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
   tft.drawString("AOS IN:", 360, 225, 1);
 
-  // Central polar radar (concentric circles + cross)
+  // Panel "NASTÄPNY PRZELOT" - u gĂłry po prawej, w wolnej przestrzeni obok
+  // tytuĹ‚u. WartoĹ›Ä‡ (godzina) jest dynamiczna i aktualizowana w
+  // updateIssDynamicDisplay().
+  tft.drawRoundRect(348, 22, 128, 36, 4, TFT_YELLOW);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.drawString("NASTEPNY PRZELOT:", 351, 25, 1);
+
+  // Central polar radar (concentric circles + cross + compass labels + QTH dot).
+  // Drawn via a shared helper so the exact same pixels are (re)painted here
+  // AND on every dynamic refresh - see drawIssRadarBackground() below.
+  drawIssRadarBackground();
+
+  // ensure previous sat pos invalidated so first dynamic draw paints fresh
+  lastIssSatX = -1;
+  lastIssSatY = -1;
+}
+
+// Draws the static radar rings/cross/compass-labels/QTH-dot for the ISS
+// polar radar. Used both for the initial screen draw and to fully repaint
+// the radar area on every dynamic refresh (see updateIssDynamicDisplay()),
+// which is what lets us cleanly erase the previous frame's ground-track
+// line instead of leaving it on screen.
+//
+// IMPORTANT: this function always leaves text datum/size/color reset to a
+// known state (TL_DATUM) before returning, so nothing drawn afterwards
+// (e.g. the data boxes) inherits a stale MC_DATUM setting.
+void drawIssRadarBackground() {
   tft.drawCircle(issCx, issCy, issRMax, TFT_WHITE);
   tft.drawCircle(issCx, issCy, issRMax * 3 / 4, 0x7BEF);
   tft.drawCircle(issCx, issCy, issRMax / 2, 0x39C7);
@@ -19156,18 +19948,19 @@ void drawIssStaticInterface() {
   tft.drawLine(issCx - issRMax, issCy, issCx + issRMax, issCy, 0x39C7);
 
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);
   tft.setTextDatum(MC_DATUM);
   tft.drawString("N", issCx, issCy - issRMax - 12, 2);
   tft.drawString("S", issCx, issCy + issRMax + 12, 2);
   tft.drawString("W", issCx - issRMax - 15, issCy, 2);
   tft.drawString("E", issCx + issRMax + 15, issCy, 2);
+  // Restore the datum immediately - previously this was left as MC_DATUM,
+  // which corrupted the position of every value drawn afterwards (country,
+  // lat/lon, speed, etc. all assume top-left anchored coordinates).
+  tft.setTextDatum(TL_DATUM);
 
   // QTH star
   tft.fillCircle(issCx, issCy, 4, TFT_RED);
-
-  // ensure previous sat pos invalidated so first dynamic draw paints fresh
-  lastIssSatX = -1;
-  lastIssSatY = -1;
 }
 
 void updateIssDynamicDisplay() {
@@ -19176,6 +19969,9 @@ void updateIssDynamicDisplay() {
   double localIssLat = 0.0, localIssLng = 0.0, localIssAltitude = 0.0, localIssSpeed = 0.0;
   double localIssDistance = 0.0, localIssAzimuth = 0.0, localIssElevation = 0.0;
   String localIssCountry = "CZEKAJ...";
+  String localIssCountryCode = "";
+  static int localTrajX[ISS_TRAJECTORY_POINTS];
+  static int localTrajY[ISS_TRAJECTORY_POINTS];
 
   if (issDataMutex != NULL && xSemaphoreTake(issDataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     localIssLat = issLat;
@@ -19186,6 +19982,12 @@ void updateIssDynamicDisplay() {
     localIssAzimuth = issAzimuth;
     localIssElevation = issElevation;
     localIssCountry = issCountry;
+    localIssCountryCode = issCountryCode;
+    // issTrajectoryX/Y are written by calculateIssTrajectory() on the
+    // background ISS task (Core 0) - copy them out under the same mutex
+    // instead of reading the globals directly from this (UI) context.
+    memcpy(localTrajX, issTrajectoryX, sizeof(localTrajX));
+    memcpy(localTrajY, issTrajectoryY, sizeof(localTrajY));
     xSemaphoreGive(issDataMutex);
   } else {
     return; // couldn't take mutex
@@ -19193,64 +19995,84 @@ void updateIssDynamicDisplay() {
 
   char buf[64];
 
+  // All value fields below use font 2 (native ~16px tall) at text SIZE 1.
+  // They previously also called setTextSize(2), which doubles an already
+  // ~16px-tall font to ~32px - taller than the erase rects and the boxes
+  // themselves, so each refresh left un-erased fragments of the previous
+  // (larger) text behind and bled into neighbouring boxes. That's the
+  // "data drifts / overlaps after a while" bug.
+  //
+  // They also all used the default TL_DATUM (top-left) with x set to the
+  // box's horizontal center - so text always grew to the RIGHT from that
+  // point instead of actually being centered, letting longer strings (like
+  // a long country name) spill past the box's right edge. Using MC_DATUM
+  // (middle-center) at that same point centers the text symmetrically
+  // instead, regardless of its length.
+  tft.setTextDatum(MC_DATUM);
+
   // Country
   tft.fillRect(12, 78, 156, 23, TFT_BLACK);
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   tft.drawString(localIssCountry, 90, 90, 2);
+  // Mała flaga kraju (BMP 24x16 w /flags/{CC}.bmp)
+  if (localIssCountryCode.length() > 0) {
+    String flagPath = "/flags/" + localIssCountryCode + ".bmp";
+    drawBmpFromFS(flagPath, 15, 81);
+  }
 
   // Latitude
   tft.fillRect(12, 123, 136, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
-  snprintf(buf, sizeof(buf), "%0.4f°", localIssLat);
+  tft.setTextSize(1);
+  snprintf(buf, sizeof(buf), "%0.4fÂ°", localIssLat);
   tft.drawString(String(buf), 80, 135, 2);
 
   // Longitude
   tft.fillRect(12, 168, 136, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
-  snprintf(buf, sizeof(buf), "%0.4f°", localIssLng);
+  tft.setTextSize(1);
+  snprintf(buf, sizeof(buf), "%0.4fÂ°", localIssLng);
   tft.drawString(String(buf), 80, 180, 2);
 
   // Altitude
   tft.fillRect(12, 213, 136, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   snprintf(buf, sizeof(buf), "%0.1f km", localIssAltitude);
   tft.drawString(String(buf), 80, 225, 2);
 
   // Speed
   tft.fillRect(12, 283, 106, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   snprintf(buf, sizeof(buf), "%0.0f km/h", localIssSpeed);
   tft.drawString(String(buf), 65, 295, 2);
 
   // Azimuth
   tft.fillRect(127, 283, 106, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
-  snprintf(buf, sizeof(buf), "%0.1f°", localIssAzimuth);
+  tft.setTextSize(1);
+  snprintf(buf, sizeof(buf), "%0.1fÂ°", localIssAzimuth);
   tft.drawString(String(buf), 180, 295, 2);
 
   // Distance
   tft.fillRect(242, 283, 106, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   snprintf(buf, sizeof(buf), "%0.0f km", localIssDistance);
   tft.drawString(String(buf), 295, 295, 2);
 
   // Elevation
   tft.fillRect(357, 283, 111, 23, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
-  snprintf(buf, sizeof(buf), "%0.1f°", localIssElevation);
+  tft.setTextSize(1);
+  snprintf(buf, sizeof(buf), "%0.1fÂ°", localIssElevation);
   tft.drawString(String(buf), 412, 295, 2);
 
   // AOS IN
   tft.fillRect(357, 238, 111, 23, TFT_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   if (localIssElevation > 0) {
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
     tft.drawString("WIDOCZNY", 412, 250, 2);
@@ -19259,23 +20081,82 @@ void updateIssDynamicDisplay() {
     tft.drawString("NIE WIDOCZNY", 412, 250, 2);
   }
 
+  // NASTÄPNY PRZELOT - godzina z przewidywania SGP4 (updateIssNextPassEstimate()),
+  // policzona co 5 minut w tle. DopĂłki nie ma jeszcze waĹĽnego TLE/wyniku,
+  // pokazujemy "--:--".
+  tft.fillRect(350, 34, 124, 22, TFT_BLACK);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.setTextDatum(MC_DATUM);
+  if (issNextPassEstimateValid) {
+    struct tm passTm;
+    time_t passEpoch = issNextPassEstimateEpoch + getCachedTimezoneOffset() * 3600;
+    localtime_r(&passEpoch, &passTm);
+    char passBuf[8];
+    snprintf(passBuf, sizeof(passBuf), "%02d:%02d", passTm.tm_hour, passTm.tm_min);
+    tft.drawString(String(passBuf), 412, 44, 2);
+  } else {
+    tft.drawString("--:--", 412, 44, 2);
+  }
+  tft.setTextDatum(TL_DATUM);
+
+  // Restore TL_DATUM before the radar section below (drawIssRadarBackground
+  // also manages its own datum internally, but keep this explicit so
+  // nothing downstream can inherit MC_DATUM by accident).
+  tft.setTextDatum(TL_DATUM);
+
+  // Erase the previous cycle's ground-track line by precisely redrawing it
+  // in black (exact same coordinates it was drawn with), instead of never
+  // clearing it at all. This is what let the yellow ground-track lines
+  // accumulate into a growing tangle every refresh cycle before.
+  static bool issPrevTrajValid = false;
+  static int issPrevTrajX[ISS_TRAJECTORY_POINTS];
+  static int issPrevTrajY[ISS_TRAJECTORY_POINTS];
+
+  if (issPrevTrajValid) {
+    for (int i = 0; i < ISS_TRAJECTORY_POINTS - 1; i++) {
+      int x0 = issPrevTrajX[i];
+      int y0 = issPrevTrajY[i];
+      int x1 = issPrevTrajX[i + 1];
+      int y1 = issPrevTrajY[i + 1];
+      if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0) break;
+      tft.drawLine(x0, y0, x1, y1, TFT_BLACK);
+    }
+    issPrevTrajValid = false;
+  }
+
   // Clear previous sat icon
   if (lastIssSatX != -1 && lastIssSatY != -1) {
     tft.fillRect(lastIssSatX - 16, lastIssSatY - 16, 32, 32, TFT_BLACK);
   }
 
-  // Draw trajectory from mercator arrays
+  // The two erases above can nick through the thin radar rings/cross where
+  // the old line/icon happened to cross them. Repainting the radar
+  // background is cheap and non-destructive (outlines + text only, no
+  // solid fill), so it safely repairs any such nicks without touching the
+  // surrounding data boxes.
+  drawIssRadarBackground();
+
+  // Draw trajectory using radar-relative (polar) coordinates computed in
+  // calculateIssTrajectory(). We stop at the FIRST point outside the
+  // radar's 5000km range (marked -1) rather than skipping past it - the
+  // simplified ground-track model isn't real orbital propagation, so
+  // distance-from-observer isn't strictly monotonic along the points and
+  // can dip back into range later in the list. Continuing past a gap
+  // reconnected those later, unrelated in-range points into extra
+  // disconnected line segments ("kreski"), instead of one continuous arc
+  // showing the upcoming near-future ground track.
   if (localIssDistance > 0 && localIssDistance <= 5000.0) {
     for (int i = 0; i < ISS_TRAJECTORY_POINTS - 1; i++) {
-      int x0 = issTrajectoryX[i];
-      int y0 = issTrajectoryY[i];
-      int x1 = issTrajectoryX[i+1];
-      int y1 = issTrajectoryY[i+1];
-      if ((x0 == 0 && y0 == 0) || (x1 == 0 && y1 == 0)) continue;
-      if (abs(x1 - x0) < 240) {
-        tft.drawLine(x0, y0, x1, y1, TFT_YELLOW);
-      }
+      int x0 = localTrajX[i];
+      int y0 = localTrajY[i];
+      int x1 = localTrajX[i + 1];
+      int y1 = localTrajY[i + 1];
+      if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0) break;
+      tft.drawLine(x0, y0, x1, y1, TFT_YELLOW);
     }
+    memcpy(issPrevTrajX, localTrajX, sizeof(issPrevTrajX));
+    memcpy(issPrevTrajY, localTrajY, sizeof(issPrevTrajY));
+    issPrevTrajValid = true;
 
     double pixelDist = localIssDistance * (issRMax / 5000.0);
     double angleRad = (localIssAzimuth - 90.0) * DEG_TO_RAD;
@@ -19291,6 +20172,9 @@ void updateIssDynamicDisplay() {
 
     lastIssSatX = satX;
     lastIssSatY = satY;
+  } else {
+    lastIssSatX = -1;
+    lastIssSatY = -1;
   }
 
   // redraw header to keep it above other elements
@@ -19334,15 +20218,15 @@ unsigned long lastPskMqttDrawMs = 0;
 const unsigned long PSK_MQTT_DRAW_INTERVAL_MS = 1500; // Rysuj co 1.5 sekundy
 bool pskMqttConnected = false;
 unsigned long lastPskMqttReconnectAttempt = 0;
-const unsigned long PSK_MQTT_RECONNECT_INTERVAL_MS = 5000; // Co 5 sekund próba reconnect
+const unsigned long PSK_MQTT_RECONNECT_INTERVAL_MS = 5000; // Co 5 sekund prĂłba reconnect
 
-// Generuje precyzyjny topic na podstawie lokatora użytkownika (tylko pierwsze 4 znaki = duży kwadrat ~100x200km)
+// Generuje precyzyjny topic na podstawie lokatora uĹĽytkownika (tylko pierwsze 4 znaki = duĹĽy kwadrat ~100x200km)
 static String getPskMqttTopicForLocator(const String& locator) {
   if (locator.length() >= 4) {
     String loc4 = locator.substring(0, 4);
     loc4.toUpperCase();
     // Format: pskr/filter/v2/+/+/+/{loc4}/#
-    // To ogranicza spam do konkretnego dużego kwadratu lokatora
+    // To ogranicza spam do konkretnego duĹĽego kwadratu lokatora
     return "pskr/filter/v2/+/+/+/" + loc4 + "/#";
   }
   // Fallback na szeroki topic tylko gdy brak lokatora
@@ -19351,7 +20235,7 @@ static String getPskMqttTopicForLocator(const String& locator) {
 
 // Callback dla MQTT - parsuje JSON i dodaje do bufora
 void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
-  // Ogranicz rozmiar payloadu dla bezpieczeństwa
+  // Ogranicz rozmiar payloadu dla bezpieczeĹ„stwa
   if (length > 1024) {
     Serial.println("[PSK MQTT] Payload too large, skipping");
     return;
@@ -19361,7 +20245,7 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
   StaticJsonDocument<1024> doc;
   DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
-    return; // Ciche pominięcie błędów parsowania
+    return; // Ciche pominiÄ™cie bĹ‚Ä™dĂłw parsowania
   }
 
   // Pobierz pola z JSON
@@ -19379,7 +20263,7 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
   String locStr(senderLocator);
   locatorToLatLon(locStr, lat, lon);
 
-  // Określ pasmo
+  // OkreĹ›l pasmo
   int band = 0;
   int freq_khz = (int)(frequency / 1000);
   if (freq_khz >= 3500 && freq_khz <= 4000) band = 80;
@@ -19389,19 +20273,19 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
   else if (freq_khz >= 28000 && freq_khz <= 29700) band = 10;
   else if (freq_khz >= 50000 && freq_khz <= 54000) band = 6;
 
-  // Filtruj po pasmie jeśli ustawiony
+  // Filtruj po pasmie jeĹ›li ustawiony
   if (pskFilterBand.length() > 0) {
     int filterBand = pskFilterBand.toInt();
     if (band != filterBand) return;
   }
 
-  // Filtruj po trybie jeśli ustawiony
+  // Filtruj po trybie jeĹ›li ustawiony
   String modeStr = mode ? String(mode) : String("FT8");
   if (pskFilterMode.length() > 0) {
     if (!modeStr.equalsIgnoreCase(pskFilterMode)) return;
   }
 
-  // Sprawdź czy monitorujemy konkretny znak
+  // SprawdĹş czy monitorujemy konkretny znak
   if (pskMqttCallsign.length() > 0) {
     String monitorCall = pskMqttCallsign;
     monitorCall.toUpperCase();
@@ -19420,50 +20304,50 @@ void pskMqttCallback(char* topic, byte* payload, unsigned int length) {
     pskMqttSpotBuffer[pskMqttSpotCount].receivedAt = millis();
     pskMqttSpotCount++;
 
-    // Debug co 10 spotów
+    // Debug co 10 spotĂłw
     if (pskMqttSpotCount % 10 == 0) {
-      Serial.printf("[PSK MQTT] Bufor: %d spotów\n", pskMqttSpotCount);
+      Serial.printf("[PSK MQTT] Bufor: %d spotĂłw\n", pskMqttSpotCount);
     }
   }
 }
 
-// Łączenie z MQTT z timeout i loop() - naprawia problem zawieszania
+// ĹÄ…czenie z MQTT z timeout i loop() - naprawia problem zawieszania
 void reconnectPskMqtt() {
   if (!wifiConnected) return;
 
   unsigned long now = millis();
-  // Sprawdź czy minął czas od ostatniej próby
+  // SprawdĹş czy minÄ…Ĺ‚ czas od ostatniej prĂłby
   if (now - lastPskMqttReconnectAttempt < PSK_MQTT_RECONNECT_INTERVAL_MS) {
     return;
   }
   lastPskMqttReconnectAttempt = now;
 
-  // Jeśli już połączony, tylko loop()
+  // JeĹ›li juĹĽ poĹ‚Ä…czony, tylko loop()
   if (pskMqttClient.connected()) {
     pskMqttClient.loop();
     return;
   }
 
-  Serial.print("[PSK MQTT] Łączenie z MQTT...");
+  Serial.print("[PSK MQTT] ĹÄ…czenie z MQTT...");
 
   // Generuj client ID
   String clientId = "ESP32-HAM-CLOCK-" + String(random(0xffff), HEX);
 
-  // Timeout dla połączenia - nie blokujący
+  // Timeout dla poĹ‚Ä…czenia - nie blokujÄ…cy
   unsigned long connectStart = millis();
   bool connected = false;
 
-  // Próba połączenia z timeout 5 sekund
+  // PrĂłba poĹ‚Ä…czenia z timeout 5 sekund
   while (!connected && (millis() - connectStart < 5000)) {
     connected = pskMqttClient.connect(clientId.c_str());
     if (!connected) {
-      pskMqttClient.loop(); // KLUCZOWE: loop() podczas prób!
+      pskMqttClient.loop(); // KLUCZOWE: loop() podczas prĂłb!
       delay(100);
     }
   }
 
   if (connected) {
-    Serial.println(" połączono!");
+    Serial.println(" poĹ‚Ä…czono!");
     pskMqttConnected = true;
 
     // Subskrybuj precyzyjny topic
@@ -19471,19 +20355,19 @@ void reconnectPskMqtt() {
     if (userLocator.length() >= 4) {
       topic = getPskMqttTopicForLocator(userLocator);
     } else {
-      // Fallback - subskrybuj wszystko (może być spam)
+      // Fallback - subskrybuj wszystko (moĹĽe byÄ‡ spam)
       topic = "pskr/filter/v2/+/+/+/+/+";
     }
 
     Serial.printf("[PSK MQTT] Subskrypcja: %s\n", topic.c_str());
     pskMqttClient.subscribe(topic.c_str());
   } else {
-    Serial.println(" nieudane, ponowię za 5s");
+    Serial.println(" nieudane, ponowiÄ™ za 5s");
     pskMqttConnected = false;
   }
 }
 
-// Główna funkcja loop dla MQTT
+// GĹ‚Ăłwna funkcja loop dla MQTT
 void loopPskMqtt() {
   if (!pskMqttEnabled) return;
   if (!wifiConnected) {
@@ -19499,23 +20383,23 @@ void loopPskMqtt() {
     mqttInitialized = true;
   }
 
-  // Reconnect lub utrzymanie połączenia (z loop() w środku!)
+  // Reconnect lub utrzymanie poĹ‚Ä…czenia (z loop() w Ĺ›rodku!)
   reconnectPskMqtt();
 
-  // Obsługa MQTT loop
+  // ObsĹ‚uga MQTT loop
   if (pskMqttClient.connected()) {
     pskMqttClient.loop();
   }
 
-  // Przetwarzanie bufora i rysowanie co zadany interwał
+  // Przetwarzanie bufora i rysowanie co zadany interwaĹ‚
   processPskMqttBuffer();
 }
 
-// Przetwarza bufor i kopiuje do głównej tablicy spotów dla wyświetlenia
+// Przetwarza bufor i kopiuje do gĹ‚Ăłwnej tablicy spotĂłw dla wyĹ›wietlenia
 void processPskMqttBuffer() {
   unsigned long now = millis();
 
-  // Sprawdź czy czas na rysowanie
+  // SprawdĹş czy czas na rysowanie
   if (now - lastPskMqttDrawMs < PSK_MQTT_DRAW_INTERVAL_MS) {
     return;
   }
@@ -19523,7 +20407,7 @@ void processPskMqttBuffer() {
 
   if (pskMqttSpotCount == 0) return;
 
-  // Kopiuj do głównej tablicy spotów
+  // Kopiuj do gĹ‚Ăłwnej tablicy spotĂłw
   pskSpotCount = 0;
   for (int i = 0; i < pskMqttSpotCount && i < PSK_MAX_SPOTS; i++) {
     pskSpots[pskSpotCount].callsign = pskMqttSpotBuffer[i].callsign;
@@ -19536,17 +20420,17 @@ void processPskMqttBuffer() {
     pskSpotCount++;
   }
 
-  // Czyść bufor
+  // CzyĹ›Ä‡ bufor
   pskMqttSpotCount = 0;
 
-  // Odśwież wyświetlacz jeśli na ekranie PSK
+  // OdĹ›wieĹĽ wyĹ›wietlacz jeĹ›li na ekranie PSK
   if (currentScreen == SCREEN_PSK_MAP && tftInitialized && !pskMapMenuOpen) {
-    Serial.printf("[PSK MQTT] Rysowanie %d spotów\n", pskSpotCount);
+    Serial.printf("[PSK MQTT] Rysowanie %d spotĂłw\n", pskSpotCount);
     drawPskMap();
   }
 }
 
-// Setup MQTT - wywoływane przy starcie
+// Setup MQTT - wywoĹ‚ywane przy starcie
 void setupPskMqtt() {
   pskMqttClient.setServer(pskMqttServer.c_str(), pskMqttPort);
   pskMqttClient.setCallback(pskMqttCallback);
@@ -19567,15 +20451,15 @@ void setup() {
   // Zapisz czas startu systemu
   bootTimeMs = millis();
   
-  // Wyczyść cache QRZ przy starcie (aby wymusić pobranie nowych danych z lat/lon)
+  // WyczyĹ›Ä‡ cache QRZ przy starcie (aby wymusiÄ‡ pobranie nowych danych z lat/lon)
   for (int i = 0; i < QRZ_CACHE_SIZE; i++) {
     qrzCache[i].callsign = "";
     qrzCache[i].fetchedAtMs = 0;
   }
   Serial.println("[SETUP] QRZ cache cleared");
 
-  // Ten log idzie "kanałem" (zwykle tym samym co bootlog),
-  // Na ESP32-C3 (zwłaszcza z USB CDC) warto chwilę poczekać na monitor portu
+  // Ten log idzie "kanaĹ‚em" (zwykle tym samym co bootlog),
+  // Na ESP32-C3 (zwĹ‚aszcza z USB CDC) warto chwilÄ™ poczekaÄ‡ na monitor portu
   unsigned long serialWaitStart = millis();
   while (!Serial && (millis() - serialWaitStart) < 2000) {
     delay(10);
@@ -19583,7 +20467,7 @@ void setup() {
   delay(200);
   Serial.println("[SETUP] Serial ready");
 
-  // Daj chwilĂ„â„˘ na ustabilizowanie WiFi/PHY po resecie (zwÄąâ€šaszcza na "Super Mini")
+  // Daj chwilÄ‚â€žĂ˘â€žË na ustabilizowanie WiFi/PHY po resecie (zwĂ„Ä…Ă˘â‚¬Ĺˇaszcza na "Super Mini")
   delay(300);
 
   if (dxSpotsMutex == nullptr) {
@@ -19594,16 +20478,22 @@ void setup() {
   if (issDataMutex == nullptr) {
     issDataMutex = xSemaphoreCreateMutex();
   }
+  // Mutex chroniÄ…cy dostÄ™p do issSat (Sgp4)/issTleValid - propagator SGP4
+  // trzyma stan wewnÄ™trzny, wiÄ™c nie jest bezpieczny do wywoĹ‚ywania z dwĂłch
+  // miejsc naraz (np. rysowanie trajektorii i przewidywanie przelotu).
+  if (issTleMutex == nullptr) {
+    issTleMutex = xSemaphoreCreateMutex();
+  }
 
   initStatusRgbLed();
   updateStatusRgbLed();
 
-  // Inicjalizacja pomiaru napięcia baterii (TP4056 + 18650)
+  // Inicjalizacja pomiaru napiÄ™cia baterii (TP4056 + 18650)
 #ifdef BATTERY_MONITORING_ENABLED
   pinMode(BATTERY_ADC_PIN, INPUT);
-  analogSetAttenuation(ADC_11db);  // Pełny zakres 0-3.3V
+  analogSetAttenuation(ADC_11db);  // PeĹ‚ny zakres 0-3.3V
   analogReadResolution(BATTERY_ADC_RESOLUTION);
-  // Pobierz pierwszy odczyt dla wstępnej kalibracji
+  // Pobierz pierwszy odczyt dla wstÄ™pnej kalibracji
   delay(10);
   batteryVoltage = readBatteryVoltage();
   batteryPercentage = calculateBatteryPercentage(batteryVoltage);
@@ -19613,20 +20503,22 @@ void setup() {
                 batteryCharging ? "[CHARGING]" : "");
 #endif
   
-  // WyÄąâ€şwietlacz TFT (ESP32-2432S028) Ă˘â‚¬â€ś inicjalizacja NA POCZĂ„â€žTKU (jak w projekcie referencyjnym)
-  // TFT powinien byĂ„â€ˇ inicjalizowany zaraz po Serial.begin(), przed innymi peryferiami
+  // WyĂ„Ä…Ă˘â‚¬Ĺźwietlacz TFT (ESP32-2432S028) Ä‚ËĂ˘â€šÂ¬Ă˘â‚¬Ĺ› inicjalizacja NA POCZÄ‚â€žĂ˘â‚¬ĹľTKU (jak w projekcie referencyjnym)
+  // TFT powinien byÄ‚â€žĂ˘â‚¬Ë‡ inicjalizowany zaraz po Serial.begin(), przed innymi peryferiami
 #ifdef ENABLE_TFT_DISPLAY
   initTFT();
   yield();
 #endif
 
-  // Inicjalizacja LittleFS z wieloma próbami i diagnostyką
+  // Inicjalizacja LittleFS z wieloma prĂłbami i diagnostykÄ…
   Serial.println("[LittleFS] Starting initialization...");
+  Serial.printf("[LittleFS] Free heap before mount: %d\n", ESP.getFreeHeap());
+  Serial.printf("[LittleFS] Partition: size=%d used=%d\n", LittleFS.totalBytes(), LittleFS.usedBytes());
   int littleFsAttempts = 0;
   while (!littleFsReady && littleFsAttempts < 3) {
     littleFsAttempts++;
     Serial.printf("[LittleFS] Attempt %d/3...\n", littleFsAttempts);
-    if(LittleFS.begin(true)){
+    if(LittleFS.begin(false)){
       Serial.println("[LittleFS] Mounted successfully!");
       littleFsReady = true;
     } else {
@@ -19636,18 +20528,39 @@ void setup() {
   }
   
   if (!littleFsReady) {
+    Serial.println("[LittleFS] Trying format...");
+    if(LittleFS.format()){
+      Serial.println("[LittleFS] Format OK, retrying mount...");
+      if(LittleFS.begin(false)){
+        Serial.println("[LittleFS] Mounted after format!");
+        littleFsReady = true;
+      }
+    }
+  }
+  
+  if (!littleFsReady) {
     Serial.println("[LittleFS] ERROR: All mount attempts failed!");
-    Serial.println("[LittleFS] Check partition scheme in Arduino IDE:");
-    Serial.println("  Tools -> Partition Scheme -> should include SPIFFS or LittleFS");
     bootLogLine("LittleFS: BRAK - sprawdz schemat partycji!");
   } else {
-    // Sprawdź co jest w LittleFS
-    Serial.println("[LittleFS] Checking files:");
-    if (LittleFS.exists("/littlefs_data/splash.bmp")) {
-      Serial.println("  /littlefs_data/splash.bmp - OK");
-    } else {
-      Serial.println("  /littlefs_data/splash.bmp - NOT FOUND");
+    Serial.printf("[LittleFS] Total: %d, Used: %d, Free: %d\n", LittleFS.totalBytes(), LittleFS.usedBytes(), LittleFS.totalBytes() - LittleFS.usedBytes());
+    Serial.println("[LittleFS] Listing root files:");
+    File root = LittleFS.open("/", "r");
+    File file = root.openNextFile();
+    int fileCount = 0;
+    while (file && fileCount < 30) {
+      Serial.printf("  %s (%d bytes)\n", file.path(), file.size());
+      file = root.openNextFile();
+      fileCount++;
     }
+    root.close();
+    bool splashExists = LittleFS.exists("/splash.bmp");
+    bool indexExists = LittleFS.exists("/index.html");
+    bool mapaExists = LittleFS.exists("/mapa.bmp");
+    bool pskMapExists = LittleFS.exists("/Mapa swiata.bmp");
+    Serial.printf("[LittleFS] /splash.bmp: %s\n", splashExists ? "YES" : "NO");
+    Serial.printf("[LittleFS] /index.html: %s\n", indexExists ? "YES" : "NO");
+    Serial.printf("[LittleFS] /mapa.bmp: %s\n", mapaExists ? "YES" : "NO");
+    Serial.printf("[LittleFS] /Mapa swiata.bmp: %s\n", pskMapExists ? "YES" : "NO");
     bootLogLine("LittleFS: OK");
   }
 
@@ -19655,12 +20568,12 @@ void setup() {
   bootLogLine("ESP32 DX Cluster Receiver");
   bootLogLine("==============================");
   
-  // DIAGNOSTYKA: Sprawdź czy ENABLE_TFT_DISPLAY jest zdefiniowane
+  // DIAGNOSTYKA: SprawdĹş czy ENABLE_TFT_DISPLAY jest zdefiniowane
 #ifdef ENABLE_TFT_DISPLAY
   bootLogLine("ENABLE_TFT_DISPLAY - init TFT");
 #else
   bootLogLine("UWAGA: ENABLE_TFT_DISPLAY NIE jest zdefiniowane - TFT dont work!");
-  bootLogLine("Upewnij sie, że kompilujesz dla środowiska 'esp32-2432s028'");
+  bootLogLine("Upewnij sie, ĹĽe kompilujesz dla Ĺ›rodowiska 'esp32-2432s028'");
 #endif
   yield();
 
@@ -19690,7 +20603,7 @@ void setup() {
     bootLogLine("FIX: aprsIsHost reset to rotate.aprs2.net");
   }
   if (wifiSSID == "Multiplay_C984") {
-    wifiSSID = "Multiplay_C984";  // To jest OK - Twoja sieć
+    wifiSSID = "Multiplay_C984";  // To jest OK - Twoja sieÄ‡
   }
   savePreferences();
   bootLogLine("Config fixed and saved!");
@@ -19740,10 +20653,18 @@ void setup() {
   yield();
 
   // Create ISS task on Core 0 for non-blocking satellite calculations
+  //
+  // Stack bumped from 4096 to 16384 bytes: this task performs HTTPS/TLS
+  // requests (fetchIssData() to wheretheiss.at AND getIssCountryFromCoords()
+  // to nominatim.openstreetmap.org), and TLS handshake/crypto code is very
+  // stack-hungry on ESP32. 4096 bytes was already marginal with one HTTPS
+  // call and overflowed once a second WiFiClientSecure object was added,
+  // triggering a "Stack canary watchpoint triggered (ISS_Task)" panic and
+  // reboot loop.
   xTaskCreatePinnedToCore(
     issTask,           // Task function
     "ISS_Task",       // Task name
-    4096,             // Stack size
+    24576,            // Stack size (bumped again: SGP4 propagation + TLE fetch added on top of the existing HTTPS work)
     NULL,             // Parameters
     1,                // Priority
     &issTaskHandle,   // Task handle
@@ -19756,18 +20677,16 @@ void setup() {
   String ipStr = wifiConnected ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
   bootLogLine("IP: " + ipStr);
   
-  // Aktualizuj wyświetlacz TFT (ekran startowy)
+  // Aktualizuj wyĹ›wietlacz TFT (ekran startowy)
 #ifdef ENABLE_TFT_DISPLAY
   // Standardowe ekrany powitalne
   drawWelcomeScreenYellow();
   delay(2000);
-  drawWelcomeScreenGreen();
-  delay(3000);
-  
-  // Ekran splash SP9TNV z opcją pominięcia - wyświetla się PO ekranach powitalnych
+
+  // Ekran splash SP9TNV z opcjÄ… pominiÄ™cia - wyĹ›wietla siÄ™ PO ekranach powitalnych
   drawSplashScreen();
   
-  // Pokaż ikonę baterii od razu na ekranie splash
+  // PokaĹĽ ikonÄ™ baterii od razu na ekranie splash
 #ifdef BATTERY_MONITORING_ENABLED
   drawBatteryQuickUpdate(true);
 #endif
@@ -19781,7 +20700,7 @@ void setup() {
     if (readTouchPoint(tx, ty)) {
       splashSkipped = true;
     }
-    // Odświeżaj ikonę baterii co 1 sekundę podczas czekania
+    // OdĹ›wieĹĽaj ikonÄ™ baterii co 1 sekundÄ™ podczas czekania
     unsigned long now = millis();
     if (now - lastBatteryUpdate >= 1000) {
       lastBatteryUpdate = now;
@@ -19790,7 +20709,7 @@ void setup() {
     }
     delay(50);
   }
-  // Odświeżaj ikonę baterii co 1 sekundę podczas czekania
+  // OdĹ›wieĹĽaj ikonÄ™ baterii co 1 sekundÄ™ podczas czekania
   unsigned long now = millis();
   if (now - lastBatteryUpdate >= 1000) {
     lastBatteryUpdate = now;
@@ -19837,14 +20756,14 @@ void loop() {
     lastHeapLog = now;
   }
 
-  // Odroczony restart (ÄąÄ˝eby odpowiedÄąĹź HTTP zdĂ„â€¦ÄąÄ˝yÄąâ€ša wyjÄąâ€şĂ„â€ˇ)
+  // Odroczony restart (Ă„Ä…Ă„Ëťeby odpowiedĂ„Ä…ÄąĹş HTTP zdÄ‚â€žĂ˘â‚¬Â¦Ă„Ä…Ă„ËťyĂ„Ä…Ă˘â‚¬Ĺˇa wyjĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡)
   if (restartRequested && (long)(millis() - restartAtMs) >= 0) {
     LOGV_PRINTLN("[LOOP] Restart requested - restarting...");
     delay(50);
     ESP.restart();
   }
   
-  // ObsÄąâ€šuga serwera WWW
+  // ObsĂ„Ä…Ă˘â‚¬Ĺˇuga serwera WWW
   if (server != nullptr) {
     server->handleClient();
   }
@@ -19852,15 +20771,15 @@ void loop() {
   // Aktualizuj czas NTP
   updateNTPTime();
   
-  // ObsÄąâ€šuga WiFi
+  // ObsĂ„Ä…Ă˘â‚¬Ĺˇuga WiFi
   if (!wifiConnected && WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
-    Serial.print("STA połączoneâ€¦czone. IP: ");
+    Serial.print("STA poĹ‚Ä…czoneĂ˘â‚¬Â¦czone. IP: ");
     Serial.println(WiFi.localIP());
-    // Jeżeli wcześniej był uruchomiony AP do konfiguracji, wyłącz go po udanym połączeniu STA,
-    // żeby nie robić wrażenia "zwiechy" (klient AP traci link przy przełączeniu kanału).
+    // JeĹĽeli wczeĹ›niej byĹ‚ uruchomiony AP do konfiguracji, wyĹ‚Ä…cz go po udanym poĹ‚Ä…czeniu STA,
+    // ĹĽeby nie robiÄ‡ wraĹĽenia "zwiechy" (klient AP traci link przy przeĹ‚Ä…czeniu kanaĹ‚u).
     if (WiFi.getMode() & WIFI_AP) {
-      Serial.println("Wyłączam AP (portal) po połączeniu STA. Użyj IP z sieci domowej.");
+      Serial.println("WyĹ‚Ä…czam AP (portal) po poĹ‚Ä…czeniu STA. UĹĽyj IP z sieci domowej.");
       WiFi.softAPdisconnect(true);
       WiFi.mode(WIFI_STA);
     }
@@ -19869,51 +20788,51 @@ void loop() {
     updateNTPTime();
     connectToCluster();
     connectToPotaCluster();
-    connectToAPRS(); // Połącz również z APRS-IS
+    connectToAPRS(); // PoĹ‚Ä…cz rĂłwnieĹĽ z APRS-IS
   } else if (wifiConnected && WiFi.status() != WL_CONNECTED) {
-    LOGV_PRINTLN("[LOOP] WiFi status zmieniony: połączony -> rozłączony");
+    LOGV_PRINTLN("[LOOP] WiFi status zmieniony: poĹ‚Ä…czony -> rozĹ‚Ä…czony");
     wifiConnected = false;
     telnetConnected = false;
     potaTelnetConnected = false;
     aprsConnected = false;
-    LOGV_PRINTLN("[LOOP] STA rozłączone (wracam do trybu offline/AP jeśli aktywne).");
+    LOGV_PRINTLN("[LOOP] STA rozĹ‚Ä…czone (wracam do trybu offline/AP jeĹ›li aktywne).");
   }
 
   updateStatusRgbLed();
 
-  // Obsługa wygaszacza ekranu (Matrix)
+  // ObsĹ‚uga wygaszacza ekranu (Matrix)
   checkScreenSaverTimeout();
 
-  // Obsługa uśpienia ekranu
+  // ObsĹ‚uga uĹ›pienia ekranu
   checkScreenSleepTimeout();
 
-  // Jeśli jesteśmy offline, zostajemy w AP (portal) â€” stabilnie.
+  // JeĹ›li jesteĹ›my offline, zostajemy w AP (portal) Ă˘â‚¬â€ť stabilnie.
   
-  // Obsługa Telnet
+  // ObsĹ‚uga Telnet
   if (wifiConnected) {
     if (!telnetConnected) {
-      LOGV_PRINTLN("[LOOP] WiFi OK, próba połączenia z Cluster...");
+      LOGV_PRINTLN("[LOOP] WiFi OK, prĂłba poĹ‚Ä…czenia z Cluster...");
       connectToCluster();
     } else {
       handleTelnetData();
     }
   }
 
-  // Obsługa POTA Telnet
+  // ObsĹ‚uga POTA Telnet
   if (wifiConnected) {
-    // Połączenie z POTA Cluster (Telnet)
+    // PoĹ‚Ä…czenie z POTA Cluster (Telnet)
     if (!potaTelnetConnected) {
       connectToPotaCluster();
     } else {
       handlePotaTelnetData();
     }
     
-    // Tryb HTTP API zamiast Telnetu (źródło: https://api.pota.app/v1/spots)
+    // Tryb HTTP API zamiast Telnetu (ĹşrĂłdĹ‚o: https://api.pota.app/v1/spots)
     if (lastPotaApiFetchMs == 0 || now - lastPotaApiFetchMs > POTA_API_FETCH_INTERVAL_MS) {
       if (fetchPotaApi()) {
         lastPotaApiFetchMs = now;
       } else {
-        // nawet przy błędzie aktualizuj czas, by nie spamować API
+        // nawet przy bĹ‚Ä™dzie aktualizuj czas, by nie spamowaÄ‡ API
         lastPotaApiFetchMs = now;
       }
     }
@@ -19925,10 +20844,10 @@ void loop() {
     }
   }
 
-  // ObsÄąâ€šuga APRS-IS
+  // ObsĂ„Ä…Ă˘â‚¬Ĺˇuga APRS-IS
   if (wifiConnected) {
     if (!aprsConnected) {
-      LOGV_PRINTLN("[LOOP] WiFi OK, prÄ‚łba poÄąâ€šĂ„â€¦czenia z APRS-IS...");
+      LOGV_PRINTLN("[LOOP] WiFi OK, prĂ„â€šĹ‚ba poĂ„Ä…Ă˘â‚¬ĹˇÄ‚â€žĂ˘â‚¬Â¦czenia z APRS-IS...");
       connectToAPRS();
     } else {
       handleAPRSData();
@@ -19942,11 +20861,11 @@ void loop() {
           nextAPRSPositionDueMs = nowAprs + aprsPositionIntervalMs;
         }
       } else {
-        nextAPRSPositionDueMs = 0; // Reset harmonogramu gdy beacon jest wyłączony lub brak loginu/koordynat
+        nextAPRSPositionDueMs = 0; // Reset harmonogramu gdy beacon jest wyĹ‚Ä…czony lub brak loginu/koordynat
         aprsBeaconTxCount = 0;
       }
       
-      // Watchdog APRS: jeÄąâ€şli brak danych przez dÄąâ€šuÄąÄ˝szy czas, zrÄ‚łb reconnect
+      // Watchdog APRS: jeĂ„Ä…Ă˘â‚¬Ĺźli brak danych przez dĂ„Ä…Ă˘â‚¬ĹˇuĂ„Ä…Ă„Ëťszy czas, zrĂ„â€šĹ‚b reconnect
       unsigned long inactivityTime = nowAprs - lastAPRSRxMs;
       if (inactivityTime > APRS_INACTIVITY_RECONNECT_MS) {
         LOGV_PRINT("[LOOP] WARNING: Brak danych z APRS-IS przez ");
@@ -19955,7 +20874,7 @@ void loop() {
         aprsClient.stop();
         aprsConnected = false;
         aprsLoginSent = false;
-        // connectToAPRS() odpali siĂ„â„˘ w kolejnych iteracjach
+        // connectToAPRS() odpali siÄ‚â€žĂ˘â€žË w kolejnych iteracjach
       }
     }
   }
@@ -19972,7 +20891,7 @@ void loop() {
     }
   }
 
-  // Obsługa kolejki QRZ/Callook (asynchronicznie)
+  // ObsĹ‚uga kolejki QRZ/Callook (asynchronicznie)
   if (wifiConnected && qrzQueueLen > 0) {
     unsigned long now = millis();
     unsigned long qrzInterval = getQrzLookupIntervalMs();
@@ -20002,12 +20921,12 @@ void loop() {
             qrzQueue[i].nextTryMs = now + QRZ_RETRY_DELAY_MS;
           }
         }
-        break; // jedna prÄ‚łba na iteracjĂ„â„˘
+        break; // jedna prĂ„â€šĹ‚ba na iteracjÄ‚â€žĂ˘â€žË
       }
     }
   }
 
-  // Aktualizuj pogodĂ„â„˘ (OpenWeather)
+  // Aktualizuj pogodÄ‚â€žĂ˘â€žË (OpenWeather)
   if (wifiConnected) {
     unsigned long now = millis();
     unsigned long interval = lastWeatherFetchOk ? WEATHER_FETCH_INTERVAL_MS
@@ -20019,7 +20938,7 @@ void loop() {
     }
   }
 
-  // Przetwarzaj maks. 1 liniĂ„â„˘ telnet na iteracjĂ„â„˘ (ÄąÄ˝eby nie zamroziĂ„â€ˇ WWW/UI)
+  // Przetwarzaj maks. 1 liniÄ‚â€žĂ˘â€žË telnet na iteracjÄ‚â€žĂ˘â€žË (Ă„Ä…Ă„Ëťeby nie zamroziÄ‚â€žĂ˘â‚¬Ë‡ WWW/UI)
   if (pendingTelnetLine.length() > 0) {
     LOGV_PRINT("[LOOP] Przetwarzanie linii telnet, len=");
     LOGV_PRINTLN(pendingTelnetLine.length());
@@ -20031,20 +20950,20 @@ void loop() {
     }
     
     String line = pendingTelnetLine;
-    pendingTelnetLine = ""; // WyczyÄąâ€şĂ„â€ˇ PRZED parsowaniem (ÄąÄ˝eby nie gromadziĂ„â€ˇ)
-    yield(); // Feed watchdog przed dÄąâ€šugĂ„â€¦ operacjĂ„â€¦
+    pendingTelnetLine = ""; // WyczyĂ„Ä…Ă˘â‚¬ĹźÄ‚â€žĂ˘â‚¬Ë‡ PRZED parsowaniem (Ă„Ä…Ă„Ëťeby nie gromadziÄ‚â€žĂ˘â‚¬Ë‡)
+    yield(); // Feed watchdog przed dĂ„Ä…Ă˘â‚¬ĹˇugÄ‚â€žĂ˘â‚¬Â¦ operacjÄ‚â€žĂ˘â‚¬Â¦
     
     DXSpot spot;
     unsigned long parseStart = millis();
     if (parseDXSpot(line, spot)) {
       unsigned long parseTime = millis() - parseStart;
       if (parseTime > 50) {
-        LOGV_PRINT("[LOOP] WARNING: parseDXSpot zajĂ„â„˘Äąâ€šo ");
+        LOGV_PRINT("[LOOP] WARNING: parseDXSpot zajÄ‚â€žĂ˘â€žËĂ„Ä…Ă˘â‚¬Ĺˇo ");
         LOGV_PRINT(parseTime);
         LOGV_PRINTLN("ms");
       }
       addSpot(spot);
-      // Aktualizuj wyÄąâ€şwietlacz TFT z nowymi spotami (tylko jeÄąâ€şli jesteÄąâ€şmy na ekranie 2)
+      // Aktualizuj wyĂ„Ä…Ă˘â‚¬Ĺźwietlacz TFT z nowymi spotami (tylko jeĂ„Ä…Ă˘â‚¬Ĺźli jesteĂ„Ä…Ă˘â‚¬Ĺźmy na ekranie 2)
 
     }
   }
@@ -20083,7 +21002,7 @@ void loop() {
     }
   }
 
-  // Watchdog telnet: jeÄąâ€şli brak danych z clustra przez dÄąâ€šuÄąÄ˝szy czas, zrÄ‚łb reconnect
+  // Watchdog telnet: jeĂ„Ä…Ă˘â‚¬Ĺźli brak danych z clustra przez dĂ„Ä…Ă˘â‚¬ĹˇuĂ„Ä…Ă„Ëťszy czas, zrĂ„â€šĹ‚b reconnect
   if (telnetConnected && telnetClient.connected()) {
     unsigned long now = millis();
     unsigned long inactivityTime = now - lastTelnetRxMs;
@@ -20095,8 +21014,8 @@ void loop() {
       telnetConnected = false;
       clusterLoginSent = false;
       clusterLoginScheduled = false;
-      // connectToCluster() odpali siĂ„â„˘ w kolejnych iteracjach
-    } else if (inactivityTime > 320000) { // OstrzeÄąÄ˝enie po 4 minutach
+      // connectToCluster() odpali siÄ‚â€žĂ˘â€žË w kolejnych iteracjach
+    } else if (inactivityTime > 320000) { // OstrzeĂ„Ä…Ă„Ëťenie po 4 minutach
       LOGV_PRINT("[LOOP] WARNING: Brak danych z Cluster przez ");
       LOGV_PRINT(inactivityTime / 1000);
       LOGV_PRINTLN(" sekund (blisko timeout)");
@@ -20117,10 +21036,10 @@ void loop() {
     }
   }
 
-  // WyÄąâ€şlij znak (login) jeÄąâ€şli zaplanowany
+  // WyĂ„Ä…Ă˘â‚¬Ĺźlij znak (login) jeĂ„Ä…Ă˘â‚¬Ĺźli zaplanowany
   if (telnetConnected && telnetClient.connected() && clusterLoginScheduled) {
     if ((long)(millis() - clusterSendLoginAtMs) >= 0) {
-      LOGV_PRINTLN("[LOOP] WysyÄąâ€šanie loginu do Cluster...");
+      LOGV_PRINTLN("[LOOP] WysyĂ„Ä…Ă˘â‚¬Ĺˇanie loginu do Cluster...");
       clusterLoginScheduled = false;
       if (!clusterLoginSent) {
         String login = userCallsign;
@@ -20129,8 +21048,8 @@ void loop() {
           login = DEFAULT_CALLSIGN;
         }
         
-        // JeÄąâ€şli mamy lokator, dodaj go do loginu w formacie: callsign/locator
-        // Format zgodny z CC-Cluster (dxspots.com) i wiĂ„â„˘kszoÄąâ€şciĂ„â€¦ DX ClusterÄ‚łw
+        // JeĂ„Ä…Ă˘â‚¬Ĺźli mamy lokator, dodaj go do loginu w formacie: callsign/locator
+        // Format zgodny z CC-Cluster (dxspots.com) i wiÄ‚â€žĂ˘â€žËkszoĂ„Ä…Ă˘â‚¬ĹźciÄ‚â€žĂ˘â‚¬Â¦ DX ClusterĂ„â€šĹ‚w
         if (userLocator.length() >= 4) {
           login += "/";
           login += userLocator;
@@ -20138,16 +21057,16 @@ void loop() {
           Serial.print(login);
           Serial.print(" (callsign/locator)");
           if (userCallsign.length() == 0) {
-            Serial.print(" - domyÄąâ€şlny znak, ustaw swÄ‚łj w Config");
+            Serial.print(" - domyĂ„Ä…Ă˘â‚¬Ĺźlny znak, ustaw swĂ„â€šĹ‚j w Config");
           }
           Serial.println();
         } else {
           Serial.print("[CLUSTER] Login -> ");
           Serial.print(login);
           if (userCallsign.length() == 0) {
-            Serial.print(" (domyÄąâ€şlny, ustaw swÄ‚łj znak w Config)");
+            Serial.print(" (domyĂ„Ä…Ă˘â‚¬Ĺźlny, ustaw swĂ„â€šĹ‚j znak w Config)");
           } else {
-            Serial.print(" (bez lokatora - ustaw w Config dla lepszej funkcjonalnoÄąâ€şci)");
+            Serial.print(" (bez lokatora - ustaw w Config dla lepszej funkcjonalnoĂ„Ä…Ă˘â‚¬Ĺźci)");
           }
           Serial.println();
         }
@@ -20156,9 +21075,9 @@ void loop() {
         telnetClient.print("\r\n");
         clusterLoginSent = true;
         lastClusterKeepAliveMs = millis();
-        Serial.println("[CLUSTER] Login wysÄąâ€šany");
+        Serial.println("[CLUSTER] Login wysĂ„Ä…Ă˘â‚¬Ĺˇany");
         
-        // Po zalogowaniu wyÄąâ€şlij komendy konfiguracyjne CC-Cluster (z opÄ‚łÄąĹźnieniem)
+        // Po zalogowaniu wyĂ„Ä…Ă˘â‚¬Ĺźlij komendy konfiguracyjne CC-Cluster (z opĂ„â€šĹ‚Ă„Ä…ÄąĹşnieniem)
         // Daj czas clusterowi na przetworzenie loginu
         delay(500);
         sendClusterConfigCommands();
@@ -20187,11 +21106,11 @@ void loop() {
     }
   }
 
-  // Keepalive: niektÄ‚łre klastry zrywajĂ„â€¦ idle telnet, wiĂ„â„˘c co ~30s wysyÄąâ€šamy CRLF
+  // Keepalive: niektĂ„â€šĹ‚re klastry zrywajÄ‚â€žĂ˘â‚¬Â¦ idle telnet, wiÄ‚â€žĂ˘â€žËc co ~30s wysyĂ„Ä…Ă˘â‚¬Ĺˇamy CRLF
   if (telnetConnected && telnetClient.connected()) {
     unsigned long now = millis();
     if (now - lastClusterKeepAliveMs > 30000) {
-      LOGV_PRINTLN("[LOOP] WysyÄąâ€šanie keepalive do Cluster");
+      LOGV_PRINTLN("[LOOP] WysyĂ„Ä…Ă˘â‚¬Ĺˇanie keepalive do Cluster");
       telnetClient.print("\r\n");
       lastClusterKeepAliveMs = now;
     }
@@ -20205,12 +21124,12 @@ void loop() {
     }
   }
   
-  // Obsługa MQTT PSK Reporter (w tle, nawet gdy nie na ekranie PSK)
+  // ObsĹ‚uga MQTT PSK Reporter (w tle, nawet gdy nie na ekranie PSK)
   if (pskMqttEnabled) {
     loopPskMqtt();
   }
   
-  // Dynamiczne odświeżanie ekranu ISS co 1 sekundę
+  // Dynamiczne odĹ›wieĹĽanie ekranu ISS co 1 sekundÄ™
 #ifdef ENABLE_TFT_DISPLAY
   static unsigned long lastIssTftRefresh = 0;
   if (currentScreen == SCREEN_ISS_PASS_TRACKING && tftInitialized && !inMenu) {
@@ -20224,21 +21143,24 @@ void loop() {
   // Aktualizacja pomiaru baterii (TP4056 + 18650)
 #ifdef BATTERY_MONITORING_ENABLED
   if (updateBatteryStatus()) {
-    // Debug co 30 sekund - stan baterii
-    Serial.printf("[BATTERY] %.2fV (%d%%) %s\n", 
-                  batteryVoltage, batteryPercentage,
-                  batteryCharging ? "[CHARGING]" : "");
-    
-    // Szybka aktualizacja ikony baterii (bez odświeżania całego nagłówka)
-    // drawBatteryQuickUpdate() jest lekka i nie powoduje watchdog resetu
+    // Szybka aktualizacja ikony baterii (bez odĹ›wieĹĽania caĹ‚ego nagĹ‚Ăłwka)
     drawBatteryQuickUpdate();
     
-    // Ostrzeżenie przy niskim poziomie baterii (< 10%)
+    // Debug co 30 sekund - stan baterii
+    static unsigned long lastBatteryLogMs = 0;
+    if (millis() - lastBatteryLogMs >= 30000) {
+      lastBatteryLogMs = millis();
+      Serial.printf("[BATTERY] %.2fV (%d%%) %s\n", 
+                    batteryVoltage, batteryPercentage,
+                    batteryCharging ? "[CHARGING]" : "");
+    }
+    
+    // OstrzeĹĽenie przy niskim poziomie baterii (< 10%)
     if (batteryPercentage < 10 && !batteryLowWarningShown) {
-      Serial.println("[BATTERY] UWAGA: Niski poziom baterii! Podłącz ładowarkę.");
+      Serial.println("[BATTERY] UWAGA: Niski poziom baterii! PodĹ‚Ä…cz Ĺ‚adowarkÄ™.");
       batteryLowWarningShown = true;
     }
-    // Reset flagi ostrzeżenia gdy bateria się naładuje
+    // Reset flagi ostrzeĹĽenia gdy bateria siÄ™ naĹ‚aduje
     if (batteryPercentage > 20 && batteryLowWarningShown) {
       batteryLowWarningShown = false;
     }
@@ -20247,6 +21169,6 @@ void loop() {
 
   // Feed watchdog przed delay
   yield();
-  delay(10); // Małe opóźnienie dla stabilności
+  delay(10); // MaĹ‚e opĂłĹşnienie dla stabilnoĹ›ci
   
 }
