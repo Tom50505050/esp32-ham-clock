@@ -1,5 +1,109 @@
 # Zmiany w projekcie ESP32-HAM-CLOCK (modyfikacje oryginału SP3KON)
 
+## Wersja firmware: 1.4
+
+---
+
+## ZMIANY v1.4 vs v1.3
+
+### 1. POPRAWKI KRYTYCZNE (crash / zawieszanie)
+
+#### 1.1 SPI race condition
+`updateIssDynamicDisplay()` wywoływana z Core 0 (main loop) kolidowała z UI task na Core 1 po magistrali SPI. Przeniesiono rysowanie ISS do flagi `uiPendingIssDynamicRedraw` obsługiwanej przez UI task. Eliminuje zawieszanie ekranów po kilku minutach pracy.
+
+#### 1.2 xQueueGenericSend crash
+`handleScreenIssMenuTouch()` wywoływał `drawScreen()` z Core 0, powodując deadlock kolejki UI task. Zamieniono na `requestUiScreenRedraw()` które ustawia flagę bezpośrednio.
+
+#### 1.3 WiFi circuit breaker
+Po przekroczeniu progu `HTTPS_FAIL_THRESHOLD` resetował WiFi bez `WiFi.disconnect()` + `WiFi.begin()`, przez co ESP32 nie mógł się połączyć ponownie. Dodano `wifiConnected = false` + wymuszenie reconnect.
+
+#### 1.4 PSK Reporter crash
+Globalny `WiFiClientSecure` bez try/catch przy `loadCACert` — dodano obsługę wyjątków.
+
+---
+
+### 2. STABILNOŚĆ SIECI
+
+#### 2.1 Weather / Propagation / Forecast HTTP -1
+`static WiFiClientSecure` nie wywoływał `client.stop()` przed kolejnym żądaniem, zostawały stany TLS powodujące błędy -1. Dodano `client.stop()` + timeout 5000ms do WSZYSTKICH funkcji HTTP:
+- `fetchWeatherData()`
+- `fetchWeatherForecast()`
+- `fetchAirPollutionData()`
+- `fetchPropagationData()`
+- `fetchCallookCallsignInfo()`
+- `fetchPotaApi()`
+- `ensureQrzSession()`
+
+#### 2.2 HTTPS mutex (splot)
+`SemaphoreHandle_t httpsMutex` tworzony w `setup()` serializuje wszystkie żądania HTTPS, eliminując race condition na poziomie TLS/WiFi między Core 0 a Core 1.
+
+#### 2.3 ISS task na Core 1
+`issTask()` działa na Core 1, nie wywołuje już `httpsFailCount++`, więc circuit breaker nie jest blokowany przez ISS.
+
+#### 2.4 Heap guards
+- Skip fetch Weather/Propagation jeśli `ESP.getFreeHeap() < 50000`
+- Skip Forecast/Air jeśli `< 40000`
+- Skip Callook/POTA jeśli `< 50000`, timeout 3-8s
+
+#### 2.5 Auto-restart
+Restart jeśli `ESP.getFreeHeap() < 30000` i `loopCounter > 100`.
+
+---
+
+### 3. ISS (International Space Station)
+
+#### 3.1 Predykcja przelotów n2yo.com
+Następny przelot z czasem AOS/LOS i MAX EL. Format URL `/5?apiKey=`, fallback na `radiopresses` jeśli visual zwraca 0.
+
+#### 3.2 SGP4 fallback
+Jeśli n2yo nie ma danych, SGP4 oblicza najlepszy pass (`bestPeakEl`/`bestAosT`). Zmienna `issNextPassFromN2yo` chroni przed nadpisaniem dobrych danych n2yo przez SGP4.
+
+#### 3.3 Flagi krajów (16bpp BMP)
+`drawBmpFromFS()` obsługiwał tylko 24-bit BMP, a flagi w `/flags/` są 16-bit (822B). Dodano `drawBmp16FromFS()` z obsługą ujemnej wysokości (top-down BMP) i walidacją wymiarów. `updateIssDynamicDisplay()` próbuje najpierw 16-bit, potem fallback na 24-bit.
+
+#### 3.4 ISS menu
+Hamburger (5,7) w `drawIssStaticInterface()` z opcjami "RESTART ISS DATA" i "CLOSE". Resetuje timery i ustawia `issForceRefresh = true`.
+
+#### 3.5 Mapa świata
+Pozycja ISS na mapie z kalkulacją odległości do QTH.
+
+#### 3.6 Max EL display
+"MAX EL: XX.X" w kolorze CYAN na ekranie ISS, zmienna globalna `issNextPassEstimateMaxEl`.
+
+#### 3.7 Startup delay
+15s zamiast dłuższego, natychmiastowy fetch n2yo po starcie.
+
+---
+
+### 4. WEB UI
+
+#### 4.1 EN/PL i18n
+Słownik `I18N` (~200+ wpisów PL->EN) dla statycznego HTML + `I18N_JS` dla dynamicznych stringów. Funkcja `setLang('en'/'pl')` używa DOM tree walker. Zapis w `localStorage('hamclock_lang')`, przywracany przy starcie strony.
+
+#### 4.2 EN/PL buttons
+Zmieniono z `<a href="/indexEN.html">` na `onclick="setLang('pl'/'en')"` z klasami `.pl-btn`/`.en-btn`.
+
+#### 4.3 Screen order labels
+`updateScreenSlotLabels()` synchronizuje selecty `screen_slot_1..14` z `SCREEN_NAME_MAP` i `onchange` handlers.
+
+#### 4.4 Dynamiczne stringi
+Funkcja `t()` owija JS-generated text przez `I18N_JS` dictionary.
+
+---
+
+### 5. LittleFS
+
+#### 5.1 Partycja 2304KB
+Zmniejszono liczbę flag z 254 do 90 (16bpp BMP), usunięty `splash.png`. Zajęte ~1778KB, wolne ~582KB.
+
+#### 5.2 BMP failure cache
+`drawBmpFromFS()` cache'uje nieudane ścieżki przez 60s, zapobiegając spamowi logów.
+
+#### 5.3 DX/POTA cluster reconnect cooldown
+10s cooldown po rozłączeniu, zapobiegając natychmiastowemu reconnect loop.
+
+---
+
 ## Wersja firmware: 1.2b
 
 ---
