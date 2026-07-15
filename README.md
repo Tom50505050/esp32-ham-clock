@@ -163,39 +163,45 @@ Wymagania pliku BMP:
 
 Zamien plik w `littlefs_data/splash.bmp` i wgraj LittleFS.
 
-## Zmiany v1.4 vs v1.3
+## Zmiany v1.4 vs v1.3 — Pelna lista
 
-### Poprawki krytyczne
-- **SPI race condition** — `updateIssDynamicDisplay()` przeniesiona do UI task, eliminujac konflikt magistrali SPI miedzy Core 0 a Core 1
-- **xQueueGenericSend crash** — `handleScreenIssMenuTouch()` uzywa `requestUiScreenRedraw()` zamiast `drawScreen()`
-- **WiFi circuit breaker** — dodano `WiFi.disconnect()` + `WiFi.begin()` + `wifiConnected=false`
-- **PSK Reporter crash** — globalny `WiFiClientSecure` z try/catch
+### Poprawki krytyczne (crash / zawieszanie)
+
+- **SPI race condition** — `updateIssDynamicDisplay()` wywolywana z Core 0 (main loop) kolindowala z UI task na Core 1 po magistrali SPI. Przeniesiono rysowanie ISS do flagi `uiPendingIssDynamicRedraw` obslugiwanej przez UI task. Eliminuje zawieszanie ekranow po kilku minutach pracy.
+- **xQueueGenericSend crash** — `handleScreenIssMenuTouch()` wywolywal `drawScreen()` z Core 0, powodujac deadlock kolejki UI task. Zamieniono na `requestUiScreenRedraw()` ktore ustawia flage bezposrednio.
+- **WiFi circuit breaker** — po przekroczeniu progu `HTTPS_FAIL_THRESHOLD` resetowal WiFi bez `WiFi.disconnect()` + `WiFi.begin()`, przez co ESP32 nie mogl sie polaczyc ponownie. Dodano `wifiConnected = false` + wymuszenie reconnect.
+- **PSK Reporter crash** — globalny `WiFiClientSecure` bez try/catch przy `loadCACert` — dodano obsluge wyjatkow.
 
 ### Stabilnosc sieci
-- **Weather/Propagation/Forecast HTTP -1** — `client.stop()` + timeout 5000ms
-- **HTTPS mutex** — `SemaphoreHandle_t httpsMutex` serializujace zadania HTTPS
-- **ISS task na Core 1** — nie wywoluje `httpsFailCount++`, circuit breaker nie blokowany
-- **Heap guards** — skip fetch przy < 50KB heap, forecast/air < 40KB
-- **Callook/POTA heap guards** — skip < 50KB, timeout 3-8s
-- **Auto-restart** — restart przy < 30KB free heap
 
-### ISS
-- **Flag BMP (16bpp)** — `drawBmp16FromFS()` z obsluga ujemnej wysokosci i walidacja wymiarow
-- **n2yo visualpasses** — poprawiony URL, fallback na radiopasses
-- **SGP4 fallback** — bestPeakEl/bestAosT gdy n2yo niedostepne
-- **Max EL display** — "MAX EL: XX.X" w kolorze CYAN
-- **ISS menu** — hamburger (5,7) z opcja "RESTART ISS DATA"
-- **Startup delay** — 15s, natychmiastowy fetch n2yo
+- **Weather / Propagation / Forecast HTTP -1** — `static WiFiClientSecure` nie wywolywal `client.stop()` przed kolejnym zadaniem, zostawaly stany TLS powodujace bledy -1. Dodano `client.stop()` + timeout 5000ms do WSZYSTKICH funkcji HTTP: `fetchWeatherData()`, `fetchWeatherForecast()`, `fetchAirPollutionData()`, `fetchPropagationData()`, `fetchCallookCallsignInfo()`, `fetchPotaApi()`, `ensureQrzSession()`.
+- **HTTPS mutex (splot)** — `SemaphoreHandle_t httpsMutex` tworzony w `setup()` serializuje wszystkie zadania HTTPS, eliminujac race condition na poziomie TLS/WiFi miedzy Core 0 a Core 1.
+- **ISS task na Core 1** — `issTask()` dziala na Core 1, nie wywoluje juz `httpsFailCount++`, wiec circuit breaker nie jest blokowany przez ISS.
+- **Weather heap guards** — skip fetch jesli `ESP.getFreeHeap() < 50000`, skip forecast/air jesli `< 40000`.
+- **Callook/POTA heap guards** — skip jesli `heap < 50000`, timeout 3-8s.
+- **Auto-restart** — restart jesli `ESP.getFreeHeap() < 30000` i `loopCounter > 100`.
+
+### ISS (International Space Station)
+
+- **Flag BMP (16bpp)** — `drawBmpFromFS()` obslugiwal tylko 24-bit BMP, a flagi w `/flags/` sa 16-bit (822B). Dodano `drawBmp16FromFS()` z obsluga ujemnej wysokosci (top-down BMP) i walidacja wymiarow. `updateIssDynamicDisplay()` probuje najpierw 16-bit, potem fallback na 24-bit.
+- **n2yo visualpasses** — poprawiony format URL na `/5?apiKey=`, dodano fallback na `radiopresses` jesli visual zwraca 0.
+- **SGP4 fallback** — jesli n2yo nie ma danych, SGP4 oblicza najlepszy pass (`bestPeakEl`/`bestAosT`). Zmienna `issNextPassFromN2yo` chroni przed nadpisaniem dobrych danych n2yo przez SGP4.
+- **Max EL display** — "MAX EL: XX.X" w kolorze CYAN na ekranie ISS, nowa zmienna globalna `issNextPassEstimateMaxEl`.
+- **ISS menu** — hamburger (5,7) w `drawIssStaticInterface()` z opcjami "RESTART ISS DATA" i "CLOSE". Resetuje timery i ustawia `issForceRefresh = true`.
+- **Startup delay** — 15s zamiast dluzszego, natychmiastowy fetch n2yo po starcie.
 
 ### Web UI
-- **EN/PL i18n** — slownik ~200+ wpisow, `setLang('en')`, `localStorage` persistencja
-- **Screen order labels** — `updateScreenSlotLabels()` z `SCREEN_NAME_MAP`
-- **Dynamiczne stringi** — `I18N_JS` dictionary + funkcja `t()`
+
+- **EN/PL i18n** — slownik `I18N` (~200+ wpisow PL->EN) dla statycznego HTML + `I18N_JS` dla dynamicznych stringow. Funkcja `setLang('en'/'pl')` uzywa DOM tree walker. Zapis w `localStorage('hamclock_lang')`, przywracany przy starcie strony.
+- **EN/PL buttons** — zmieniono z `<a href="/indexEN.html">` na `onclick="setLang('pl'/'en')"` z klasami `.pl-btn`/`.en-btn`.
+- **Screen order labels** — `updateScreenSlotLabels()` synchronizuje selecty `screen_slot_1..14` z `SCREEN_NAME_MAP` i `onchange` handlers.
+- **Dynamiczne stringi** — funkcja `t()` owija JS-generated text przez `I18N_JS` dictionary.
 
 ### LittleFS
-- **Partycja 2304KB** — 90 flag (16bpp), usuniety splash.png
-- **BMP failure cache** — 60s cache nieudanych sciezek
-- **DX/POTA cooldown** — 10s po rozlaczeniu
+
+- **Partycja 2304KB** — zmniejszono liczbe flag z 254 do 90 (16bpp BMP), usuniety `splash.png`. Zajete ~1778KB, wolne ~582KB.
+- **BMP failure cache** — `drawBmpFromFS()` cache'uje nieudane sciezki przez 60s, zapobiegajac spamowi logow.
+- **DX/POTA cluster reconnect cooldown** — 10s cooldown po rozlaczeniu, zapobiegajac natychmiastowemu reconnect loop.
 
 ## Licencja
 
