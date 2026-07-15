@@ -169,7 +169,84 @@ Wymagania pliku BMP:
 
 Zamien plik w `littlefs_data/splash.bmp` i wgraj LittleFS.
 
-## Licencja
+---
+
+## Historia wersji
+
+### v1.4 (najnowsza)
+
+**Poprawki krytyczne:**
+- SPI race condition — rysowanie ISS przeniesione do UI task na Core 1
+- xQueueGenericSend crash — `requestUiScreenRedraw()` zamiast `drawScreen()`
+- WiFi circuit breaker — dodano `WiFi.disconnect()` + `WiFi.begin()`
+- PSK Reporter crash — globalny `WiFiClientSecure` z try/catch
+
+**Stabilnosc sieci:**
+- client.stop() + timeout 5000ms do WSZYSTKICH funkcji HTTP
+- HTTPS mutex — serializacja zadan TLS miedzy Core 0 a Core 1
+- Heap guards — skip fetch przy malo pamieci
+- Auto-restart przy krytycznie malo pamieci
+
+**ISS:**
+- Predykcja przelotow n2yo.com z AOS/LOS/MAX EL
+- SGP4 fallback gdy n2yo nedostepne
+- Flagi krajow (16bpp BMP) z drawBmp16FromFS()
+- Menu ISS — restart danych z poziomu ekranu
+- Mapa swiata z pozycja ISS i odlegloscia do QTH
+
+**Web UI:**
+- Tlumaczenie EN/PL (200+ wpisow) z localStorage
+- Kolejnosc ekranow — 14 slotow z nazwami
+- Dynamiczne stringi — I18N_JS dictionary
+
+**LittleFS:**
+- Partycja 2304KB — 90 flag (16bpp), splash, mapa, fonty
+- BMP failure cache 60s
+- DX/POTA cooldown 10s
+
+---
+
+### v1.3
+
+**Naprawa kolejnosci ekranow TFT:**
+- Usunieto blad nadpisujacy ustawienia uzytkownika domyslna kolejnoscia przy restarcie
+- Dodano 12 slotow dla ekranow TFT w interfejsie WWW
+- Zsynchronizowano typy ekranow — wszystkie 14 typow dostepnych w firmware
+
+**Aktualizacja dokumentacji i licencji:**
+- Dodano plik LICENSE z pelna trescia licencji MIT
+- Poprawiono autora — Konrad Wisniewski SP3KON
+- Zaktualizowano instrukcje
+
+---
+
+### v1.2b
+
+**Rozszerzony PSK Reporter:**
+- Filtrowanie spotow po pasmie, trybie, znaku odbiornika/nadawcy
+- Interfejs dotykowy na ekranie TFT — menu, klawiatura ekranowa, selektory
+- Zapis ustawien do pamieci NVS (nieulotnej)
+- Automatyczne odswiezanie z konfigurowalnym interwalem
+
+**Informacje systemowe w WWW:**
+- Adres IP, SSID, RSSI
+- Wolna pamiec RAM i LittleFS
+- Temperatura ESP32 i napiecie baterii
+- Uptime systemu i wersja firmware
+
+**Interfejs dotykowy TFT:**
+- Przycisk menu (≡) na mapie PSK
+- Klawiatura ekranowa dla wprowadzania znakow i liczb
+- Selektory pasm (160m-6m) i trybow (FT8, FT4, CW, itp.)
+- Potwierdzenie zapisu ustawien
+
+**PSK Reporter backend:**
+- Dynamiczny URL API z parametrami
+- Obsluga filtrow (znak, pasmo, tryb, max spots)
+- Okno czasowe — X godzin lub Y dni wstecz
+- Automatyczny timer odswiezania
+
+---
 
 **MIT License**
 
