@@ -268,7 +268,7 @@ Modyfikacje: Tomasz [SP9TNV](https://github.com/Tom50505050)
 
 - **GitHub:** [Tom50505050/esp32-ham-clock](https://github.com/Tom50505050/esp32-ham-clock)
 - **Oryginalny projekt:** [SP3KON/ESP32-HAM-CLOCK](https://github.com/SP3KON/ESP32-HAM-CLOCK)
-
+- e-mail SP9TNV@gmail.com
 ---
 
 **73! de SP9TNV**
